@@ -124,6 +124,9 @@ function DSPTab() {
   const [googleConnections, setGoogleConnections] = useState<PlatformConnectionRow[]>([]);
   const [googleLoading, setGoogleLoading] = useState(true);
   const [googleConnecting, setGoogleConnecting] = useState(false);
+  const [dv360Connections, setDv360Connections] = useState<PlatformConnectionRow[]>([]);
+  const [dv360Loading, setDv360Loading] = useState(true);
+  const [dv360Connecting, setDv360Connecting] = useState(false);
 
   const fetchMetaConnections = useCallback(async () => {
     const { data, error } = await supabase
@@ -143,22 +146,41 @@ function DSPTab() {
     setGoogleLoading(false);
   }, []);
 
+  const fetchDv360Connections = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("platform_connections")
+      .select("account_id, account_name, connected_at")
+      .eq("platform", "dv360");
+    if (!error && data) setDv360Connections(data);
+    setDv360Loading(false);
+  }, []);
+
   useEffect(() => {
     fetchMetaConnections();
     fetchGoogleConnections();
-  }, [fetchMetaConnections, fetchGoogleConnections]);
+    fetchDv360Connections();
+  }, [fetchMetaConnections, fetchGoogleConnections, fetchDv360Connections]);
 
   useEffect(() => {
     const connected = searchParams.get("connected");
     const metaError = searchParams.get("meta_error");
     const googleError = searchParams.get("google_error");
+    const dv360Error = searchParams.get("dv360_error");
 
-    // Se essa aba é o popup do OAuth do Google (foi aberta via window.open a partir
+    // Se essa aba é o popup do OAuth do Google/DV360 (foi aberta via window.open a partir
     // dessa mesma origem), avisa a aba principal por postMessage e fecha, em vez de
     // tratar a conexão aqui dentro do popup.
     if (window.opener && (connected === "google_ads" || googleError)) {
       window.opener.postMessage(
         { source: "mediahub-google-oauth", ok: connected === "google_ads", code: googleError || "connected" },
+        window.location.origin
+      );
+      window.close();
+      return;
+    }
+    if (window.opener && (connected === "dv360" || dv360Error)) {
+      window.opener.postMessage(
+        { source: "mediahub-dv360-oauth", ok: connected === "dv360", code: dv360Error || "connected" },
         window.location.origin
       );
       window.close();
@@ -179,11 +201,19 @@ function DSPTab() {
       toast({ title: "Erro ao conectar Google Ads", description: googleError, variant: "destructive" });
     }
 
-    if (connected || metaError || googleError) {
+    if (connected === "dv360") {
+      toast({ title: "DV360 conectado!", description: "Sua conta foi conectada com sucesso." });
+      fetchDv360Connections();
+    } else if (dv360Error) {
+      toast({ title: "Erro ao conectar DV360", description: dv360Error, variant: "destructive" });
+    }
+
+    if (connected || metaError || googleError || dv360Error) {
       const next = new URLSearchParams(searchParams);
       next.delete("connected");
       next.delete("meta_error");
       next.delete("google_error");
+      next.delete("dv360_error");
       setSearchParams(next, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -277,13 +307,70 @@ function DSPTab() {
     toast({ title: "Google Ads desconectado", description: "Conexão removida com sucesso." });
   }, []);
 
+  const handleConnectDV360 = useCallback(async () => {
+    setDv360Connecting(true);
+
+    const popupFeatures = [
+      "width=520", "height=680",
+      `left=${Math.round(window.screenX + (window.outerWidth - 520) / 2)}`,
+      `top=${Math.round(window.screenY + (window.outerHeight - 680) / 2)}`,
+      "menubar=no", "toolbar=no", "location=no", "status=no", "resizable=yes", "scrollbars=yes",
+    ].join(",");
+    const popup = window.open("about:blank", "dv360_oauth_popup", popupFeatures);
+
+    try {
+      const { data, error } = await supabase.functions.invoke<{ url?: string; error?: string }>(
+        "dv360-oauth-start",
+        { body: { redirectOrigin: window.location.origin } }
+      );
+      if (error || !data?.url) throw error || new Error(data?.error || "URL não retornada");
+
+      if (!popup) {
+        window.location.href = data.url;
+        return;
+      }
+
+      popup.location.href = data.url;
+
+      const handleMessage = (event: MessageEvent) => {
+        const payload = event.data as { source?: string; ok?: boolean; code?: string } | undefined;
+        if (!payload || payload.source !== "mediahub-dv360-oauth") return;
+        window.removeEventListener("message", handleMessage);
+        setDv360Connecting(false);
+        if (payload.ok) {
+          toast({ title: "DV360 conectado!", description: "Sua conta foi conectada com sucesso." });
+          fetchDv360Connections();
+        } else {
+          toast({ title: "Erro ao conectar DV360", description: payload.code || "Tente novamente.", variant: "destructive" });
+        }
+      };
+      window.addEventListener("message", handleMessage);
+    } catch (e) {
+      console.error(e);
+      popup?.close();
+      toast({ title: "Erro ao iniciar conexão", description: "Tente novamente em instantes.", variant: "destructive" });
+      setDv360Connecting(false);
+    }
+  }, [fetchDv360Connections]);
+
+  const handleDisconnectDV360 = useCallback(async () => {
+    const { error } = await supabase.from("platform_connections").delete().eq("platform", "dv360");
+    if (error) {
+      toast({ title: "Erro ao desconectar", description: error.message, variant: "destructive" });
+      return;
+    }
+    setDv360Connections([]);
+    toast({ title: "DV360 desconectado", description: "Conexão removida com sucesso." });
+  }, []);
+
   const handleAction = (platform: string, action: string) => {
     toast({ title: `${action}`, description: `Ação "${action}" para ${platform} iniciada.` });
   };
 
   const metaDsp = MOCK_DSP_CONNECTIONS.find(d => d.platform === "meta_ads")!;
   const googleDsp = MOCK_DSP_CONNECTIONS.find(d => d.platform === "google_ads")!;
-  const otherDsps = MOCK_DSP_CONNECTIONS.filter(d => d.platform !== "meta_ads" && d.platform !== "google_ads");
+  const dv360Dsp = MOCK_DSP_CONNECTIONS.find(d => d.platform === "dv360")!;
+  const otherDsps = MOCK_DSP_CONNECTIONS.filter(d => d.platform !== "meta_ads" && d.platform !== "google_ads" && d.platform !== "dv360");
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -303,6 +390,15 @@ function DSPTab() {
         connecting={googleConnecting}
         onConnect={handleConnectGoogle}
         onDisconnect={handleDisconnectGoogle}
+      />
+
+      <DV360Card
+        dv360={dv360Dsp}
+        connections={dv360Connections}
+        loading={dv360Loading}
+        connecting={dv360Connecting}
+        onConnect={handleConnectDV360}
+        onDisconnect={handleDisconnectDV360}
       />
 
       {otherDsps.map(dsp => {
@@ -388,6 +484,40 @@ function DSPTab() {
   );
 }
 
+// ── Resultado de sync por conta (usado nos modais de Meta/Google/DV360) ──
+
+type SyncResultItem = {
+  account_id: string;
+  account_name: string;
+  status: "success" | "no_data" | "error";
+  message?: string;
+};
+
+function SyncResultsList({ results }: { results: SyncResultItem[] }) {
+  return (
+    <div className="space-y-2 max-h-64 overflow-y-auto py-1">
+      {results.map(r => (
+        <div key={r.account_id} className="flex items-center gap-3 p-3 rounded-lg bg-muted/30">
+          {r.status === "success" && <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />}
+          {r.status === "no_data" && <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />}
+          {r.status === "error" && <XCircle className="w-4 h-4 text-red-400 flex-shrink-0" />}
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium truncate">{r.account_name || r.account_id}</p>
+            <p className={cn(
+              "text-xs",
+              r.status === "success" && "text-emerald-400",
+              r.status === "no_data" && "text-amber-400",
+              r.status === "error" && "text-red-400"
+            )}>
+              {r.status === "success" ? r.message : r.message || "Sem dados no período"}
+            </p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Meta Ads Card (real connection via Supabase) ──
 
 function MetaAdsCard({
@@ -406,6 +536,7 @@ function MetaAdsCard({
   const [syncOpen, setSyncOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [syncing, setSyncing] = useState(false);
+  const [syncResults, setSyncResults] = useState<SyncResultItem[] | null>(null);
 
   const toggleAccount = (id: string) => {
     setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -414,6 +545,7 @@ function MetaAdsCard({
   const handleSync = async () => {
     if (!selectedIds.length) return;
     setSyncing(true);
+    setSyncResults(null);
     try {
       const { data, error } = await supabase.functions.invoke<{
         ok: boolean;
@@ -422,29 +554,14 @@ function MetaAdsCard({
 
       if (error) throw error;
 
-      const totalRecords = data?.results?.reduce((s, r) => s + r.days, 0) ?? 0;
-      const withError = data?.results?.filter(r => r.error) ?? [];
-
-      if (totalRecords === 0 && withError.length === 0) {
-        toast({
-          title: "Sem dados no período",
-          description: "A API do Meta não retornou dados nos últimos 30 dias para as contas selecionadas.",
-          variant: "destructive",
-        });
-      } else if (withError.length > 0) {
-        toast({
-          title: "Sincronização com erros",
-          description: withError.map(e => e.error).join(" | "),
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Sincronização concluída!",
-          description: `${totalRecords} registros importados de ${selectedIds.length} conta${selectedIds.length > 1 ? "s" : ""}. Abra o Pattern Intelligence e selecione a conta no dropdown.`,
-        });
-        setSyncOpen(false);
-        setSelectedIds([]);
-      }
+      const nameFor = (id: string) => realAccounts.find(a => a.account_id === id)?.account_name || id;
+      const results: SyncResultItem[] = (data?.results ?? []).map(r => ({
+        account_id: r.account_id,
+        account_name: nameFor(r.account_id),
+        status: r.error ? "error" : r.days === 0 ? "no_data" : "success",
+        message: r.error || (r.days > 0 ? `${r.days} registros importados` : undefined),
+      }));
+      setSyncResults(results);
     } catch (e) {
       toast({ title: "Erro na sincronização", description: String(e), variant: "destructive" });
     } finally {
@@ -513,43 +630,57 @@ function MetaAdsCard({
         </div>
 
         {/* Sync Modal */}
-        <Dialog open={syncOpen} onOpenChange={(open) => { setSyncOpen(open); if (!open) setSelectedIds([]); }}>
+        <Dialog open={syncOpen} onOpenChange={(open) => { setSyncOpen(open); if (!open) { setSelectedIds([]); setSyncResults(null); } }}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Sincronizar dados do Meta Ads</DialogTitle>
               <DialogDescription>
-                Selecione até 3 contas por vez. Os dados dos últimos 30 dias serão importados para o Pattern Intelligence.
+                {syncResults
+                  ? "Resultado da sincronização por conta."
+                  : "Selecione até 3 contas por vez. Os dados dos últimos 30 dias serão importados para o Pattern Intelligence."}
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-2 max-h-64 overflow-y-auto py-1">
-              {realAccounts.map(acc => (
-                <label
-                  key={acc.account_id}
-                  className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 cursor-pointer hover:bg-muted/50 transition-colors"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.includes(acc.account_id)}
-                    onChange={() => toggleAccount(acc.account_id)}
-                    className="w-4 h-4 accent-primary flex-shrink-0"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{acc.account_name || acc.account_id}</p>
-                    <p className="text-xs text-muted-foreground">{acc.account_id}</p>
-                  </div>
-                </label>
-              ))}
-            </div>
+            {syncResults ? (
+              <SyncResultsList results={syncResults} />
+            ) : (
+              <div className="space-y-2 max-h-64 overflow-y-auto py-1">
+                {realAccounts.map(acc => (
+                  <label
+                    key={acc.account_id}
+                    className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 cursor-pointer hover:bg-muted/50 transition-colors"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(acc.account_id)}
+                      onChange={() => toggleAccount(acc.account_id)}
+                      className="w-4 h-4 accent-primary flex-shrink-0"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{acc.account_name || acc.account_id}</p>
+                      <p className="text-xs text-muted-foreground">{acc.account_id}</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            )}
             <DialogFooter className="gap-2">
-              <Button variant="outline" size="sm" onClick={() => setSyncOpen(false)} disabled={syncing}>
-                Cancelar
-              </Button>
-              <Button size="sm" onClick={handleSync} disabled={!selectedIds.length || syncing} className="gap-1.5">
-                {syncing
-                  ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  : <Zap className="w-3.5 h-3.5" />}
-                {syncing ? "Sincronizando..." : `Sincronizar${selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}`}
-              </Button>
+              {syncResults ? (
+                <Button size="sm" onClick={() => { setSyncOpen(false); setSelectedIds([]); setSyncResults(null); }}>
+                  Fechar
+                </Button>
+              ) : (
+                <>
+                  <Button variant="outline" size="sm" onClick={() => setSyncOpen(false)} disabled={syncing}>
+                    Cancelar
+                  </Button>
+                  <Button size="sm" onClick={handleSync} disabled={!selectedIds.length || syncing} className="gap-1.5">
+                    {syncing
+                      ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      : <Zap className="w-3.5 h-3.5" />}
+                    {syncing ? "Sincronizando..." : `Sincronizar${selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}`}
+                  </Button>
+                </>
+              )}
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -576,6 +707,7 @@ function GoogleAdsCard({
   const [syncOpen, setSyncOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [syncing, setSyncing] = useState(false);
+  const [syncResults, setSyncResults] = useState<SyncResultItem[] | null>(null);
 
   const toggleAccount = (id: string) => {
     setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -584,6 +716,7 @@ function GoogleAdsCard({
   const handleSync = async () => {
     if (!selectedIds.length) return;
     setSyncing(true);
+    setSyncResults(null);
     try {
       const { data, error } = await supabase.functions.invoke<{
         ok: boolean;
@@ -592,29 +725,14 @@ function GoogleAdsCard({
 
       if (error) throw error;
 
-      const totalRecords = data?.results?.reduce((s, r) => s + r.days, 0) ?? 0;
-      const withError = data?.results?.filter(r => r.error) ?? [];
-
-      if (totalRecords === 0 && withError.length === 0) {
-        toast({
-          title: "Sem dados no período",
-          description: "A API do Google Ads não retornou dados nos últimos 90 dias para as contas selecionadas.",
-          variant: "destructive",
-        });
-      } else if (withError.length > 0) {
-        toast({
-          title: "Sincronização com erros",
-          description: withError.map(e => e.error).join(" | "),
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Sincronização concluída!",
-          description: `${totalRecords} registros importados de ${selectedIds.length} conta${selectedIds.length > 1 ? "s" : ""}. Abra o Pattern Intelligence e selecione Google Ads no seletor de plataforma.`,
-        });
-        setSyncOpen(false);
-        setSelectedIds([]);
-      }
+      const nameFor = (id: string) => realAccounts.find(a => a.account_id === id)?.account_name || id;
+      const results: SyncResultItem[] = (data?.results ?? []).map(r => ({
+        account_id: r.account_id,
+        account_name: nameFor(r.account_id),
+        status: r.error ? "error" : r.days === 0 ? "no_data" : "success",
+        message: r.error || (r.days > 0 ? `${r.days} registros importados` : undefined),
+      }));
+      setSyncResults(results);
     } catch (e) {
       toast({ title: "Erro na sincronização", description: String(e), variant: "destructive" });
     } finally {
@@ -686,43 +804,274 @@ function GoogleAdsCard({
         </div>
 
         {/* Sync Modal */}
-        <Dialog open={syncOpen} onOpenChange={(open) => { setSyncOpen(open); if (!open) setSelectedIds([]); }}>
+        <Dialog open={syncOpen} onOpenChange={(open) => { setSyncOpen(open); if (!open) { setSelectedIds([]); setSyncResults(null); } }}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Sincronizar dados do Google Ads</DialogTitle>
               <DialogDescription>
-                Selecione as contas. Os dados dos últimos 90 dias serão importados para o Pattern Intelligence.
+                {syncResults
+                  ? "Resultado da sincronização por conta."
+                  : "Selecione as contas. Os dados dos últimos 90 dias serão importados para o Pattern Intelligence."}
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-2 max-h-64 overflow-y-auto py-1">
-              {realAccounts.map(acc => (
-                <label
-                  key={acc.account_id}
-                  className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 cursor-pointer hover:bg-muted/50 transition-colors"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.includes(acc.account_id)}
-                    onChange={() => toggleAccount(acc.account_id)}
-                    className="w-4 h-4 accent-primary flex-shrink-0"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{acc.account_name || acc.account_id}</p>
-                    <p className="text-xs text-muted-foreground">{acc.account_id}</p>
-                  </div>
-                </label>
-              ))}
-            </div>
+            {syncResults ? (
+              <SyncResultsList results={syncResults} />
+            ) : (
+              <div className="space-y-2 max-h-64 overflow-y-auto py-1">
+                {realAccounts.map(acc => (
+                  <label
+                    key={acc.account_id}
+                    className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 cursor-pointer hover:bg-muted/50 transition-colors"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(acc.account_id)}
+                      onChange={() => toggleAccount(acc.account_id)}
+                      className="w-4 h-4 accent-primary flex-shrink-0"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{acc.account_name || acc.account_id}</p>
+                      <p className="text-xs text-muted-foreground">{acc.account_id}</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            )}
             <DialogFooter className="gap-2">
-              <Button variant="outline" size="sm" onClick={() => setSyncOpen(false)} disabled={syncing}>
-                Cancelar
+              {syncResults ? (
+                <Button size="sm" onClick={() => { setSyncOpen(false); setSelectedIds([]); setSyncResults(null); }}>
+                  Fechar
+                </Button>
+              ) : (
+                <>
+                  <Button variant="outline" size="sm" onClick={() => setSyncOpen(false)} disabled={syncing}>
+                    Cancelar
+                  </Button>
+                  <Button size="sm" onClick={handleSync} disabled={!selectedIds.length || syncing} className="gap-1.5">
+                    {syncing
+                      ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      : <Zap className="w-3.5 h-3.5" />}
+                    {syncing ? "Sincronizando..." : `Sincronizar${selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}`}
+                  </Button>
+                </>
+              )}
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── DV360 Card (real connection via Supabase) ──
+
+function DV360Card({
+  dv360, connections, loading, connecting, onConnect, onDisconnect,
+}: {
+  dv360: typeof MOCK_DSP_CONNECTIONS[number];
+  connections: PlatformConnectionRow[];
+  loading: boolean;
+  connecting: boolean;
+  onConnect: () => void;
+  onDisconnect: () => void;
+}) {
+  const isConnected = connections.length > 0;
+  const realAccounts = connections.filter(c => c.account_id !== "pending");
+
+  const [syncOpen, setSyncOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [syncing, setSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState("");
+  const [syncResults, setSyncResults] = useState<SyncResultItem[] | null>(null);
+
+  const toggleAccount = (id: string) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+  // O relatório do DV360 é gerado de forma assíncrona pelo Google e pode levar minutos —
+  // bem mais que o limite de execução de uma Edge Function. Por isso: uma chamada inicia o
+  // relatório (rápido) e o navegador fica perguntando "já ficou pronto?" a cada poucos segundos.
+  const handleSync = async () => {
+    if (!selectedIds.length) return;
+    setSyncing(true);
+    setSyncResults(null);
+    setSyncProgress("Iniciando relatórios...");
+    try {
+      const { data: startData, error: startError } = await supabase.functions.invoke<{
+        ok: boolean;
+        jobs: { account_id: string; query_id?: string; report_id?: string; error?: string }[];
+      }>("dv360-sync", { body: { account_ids: selectedIds } });
+
+      if (startError) throw startError;
+      const jobs = startData?.jobs ?? [];
+
+      const results: { account_id: string; days: number; error?: string }[] = [];
+      const pending = jobs.filter(j => j.query_id && j.report_id);
+      for (const j of jobs) {
+        if (j.error) results.push({ account_id: j.account_id, days: 0, error: j.error });
+      }
+
+      const maxAttempts = 30; // ~30 * 2s = ~60s de espera total pelo lado do navegador (relatório costuma ficar pronto em segundos)
+      for (let attempt = 0; attempt < maxAttempts && pending.length > 0; attempt++) {
+        setSyncProgress(`Aguardando relatório do DV360... (${jobs.length - pending.length}/${jobs.length} prontos)`);
+        await sleep(2000);
+
+        for (let i = pending.length - 1; i >= 0; i--) {
+          const job = pending[i];
+          const { data: pollData, error: pollError } = await supabase.functions.invoke<{ done: boolean; days?: number; error?: string }>(
+            "dv360-sync-poll",
+            { body: { account_id: job.account_id, query_id: job.query_id, report_id: job.report_id } }
+          );
+          if (pollError) continue; // tenta de novo no próximo ciclo
+          if (pollData?.done) {
+            results.push({ account_id: job.account_id, days: pollData.days ?? 0, error: pollData.error });
+            pending.splice(i, 1);
+          }
+        }
+      }
+      for (const job of pending) {
+        results.push({ account_id: job.account_id, days: 0, error: "Relatório não ficou pronto a tempo. Tente sincronizar de novo." });
+      }
+
+      const nameFor = (id: string) => realAccounts.find(a => a.account_id === id)?.account_name || id;
+      const items: SyncResultItem[] = results.map(r => {
+        const isNoData = r.error?.includes("Sem dados");
+        return {
+          account_id: r.account_id,
+          account_name: nameFor(r.account_id),
+          status: r.error ? (isNoData ? "no_data" : "error") : r.days > 0 ? "success" : "no_data",
+          message: r.error && !isNoData ? r.error : r.days > 0 ? `${r.days} registros importados` : undefined,
+        };
+      });
+      setSyncResults(items);
+    } catch (e) {
+      toast({ title: "Erro na sincronização", description: String(e), variant: "destructive" });
+    } finally {
+      setSyncing(false);
+      setSyncProgress("");
+    }
+  };
+
+  return (
+    <Card className="border-border/50 bg-card/80 backdrop-blur">
+      <CardContent className="p-5 space-y-4">
+        {/* Header */}
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <div className={cn("p-2.5 rounded-xl", isConnected ? "bg-emerald-500/10" : "bg-muted")}>
+              {isConnected
+                ? <Wifi className="w-5 h-5 text-emerald-400" />
+                : <WifiOff className="w-5 h-5 text-muted-foreground" />}
+            </div>
+            <div>
+              <p className="font-semibold text-foreground">{dv360.displayName}</p>
+              <p className="text-xs text-muted-foreground">{dv360.description}</p>
+            </div>
+          </div>
+          <Badge variant="outline" className={cn("text-xs", isConnected ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" : "bg-muted text-muted-foreground")}>
+            {loading ? "Carregando..." : isConnected ? "Conectado" : "Desconectado"}
+          </Badge>
+        </div>
+
+        {/* Accounts summary */}
+        {isConnected && (
+          <div className="p-2.5 rounded-lg bg-emerald-500/5 border border-emerald-500/20 text-xs text-emerald-400">
+            {realAccounts.length > 0
+              ? `${realAccounts.length} anunciante${realAccounts.length > 1 ? "s" : ""} conectado${realAccounts.length > 1 ? "s" : ""}`
+              : "Autenticado — aguardando anunciantes"}
+          </div>
+        )}
+
+        {!isConnected && !loading && (
+          <p className="text-xs text-muted-foreground">
+            Conecte sua conta do Display & Video 360 para alimentar a análise de funil com seus dados de campanha.
+          </p>
+        )}
+
+        {/* Actions */}
+        <div className="grid grid-cols-2 gap-2">
+          {isConnected ? (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs gap-1.5"
+                onClick={() => setSyncOpen(true)}
+                disabled={!realAccounts.length}
+              >
+                <RefreshCw className="w-3.5 h-3.5" />Sincronizar dados
               </Button>
-              <Button size="sm" onClick={handleSync} disabled={!selectedIds.length || syncing} className="gap-1.5">
-                {syncing
-                  ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  : <Zap className="w-3.5 h-3.5" />}
-                {syncing ? "Sincronizando..." : `Sincronizar${selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}`}
+              <Button size="sm" variant="outline" className="text-xs gap-1.5" onClick={onConnect}>
+                <ShieldCheck className="w-3.5 h-3.5" />Reautenticar
               </Button>
+              <Button size="sm" variant="ghost" className="text-xs gap-1.5 text-muted-foreground col-span-2" onClick={onDisconnect}>
+                <Unlink className="w-3.5 h-3.5" />Desconectar
+              </Button>
+            </>
+          ) : (
+            <Button size="sm" className="text-xs gap-1.5 col-span-2" onClick={onConnect} disabled={connecting || loading}>
+              <Link2 className="w-3.5 h-3.5" />{connecting ? "Redirecionando..." : "Conectar"}
+            </Button>
+          )}
+        </div>
+
+        {/* Sync Modal */}
+        <Dialog open={syncOpen} onOpenChange={(open) => { setSyncOpen(open); if (!open) { setSelectedIds([]); setSyncResults(null); } }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Sincronizar dados do DV360</DialogTitle>
+              <DialogDescription>
+                {syncResults
+                  ? "Resultado da sincronização por conta."
+                  : "Selecione os anunciantes. Os dados dos últimos 90 dias serão importados para o Pattern Intelligence."}
+              </DialogDescription>
+            </DialogHeader>
+            {syncResults ? (
+              <SyncResultsList results={syncResults} />
+            ) : (
+              <div className="space-y-2 max-h-64 overflow-y-auto py-1">
+                {realAccounts.map(acc => (
+                  <label
+                    key={acc.account_id}
+                    className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 cursor-pointer hover:bg-muted/50 transition-colors"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(acc.account_id)}
+                      onChange={() => toggleAccount(acc.account_id)}
+                      className="w-4 h-4 accent-primary flex-shrink-0"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{acc.account_name || acc.account_id}</p>
+                      <p className="text-xs text-muted-foreground">{acc.account_id}</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            )}
+            {syncing && syncProgress && (
+              <p className="text-xs text-muted-foreground">{syncProgress}</p>
+            )}
+            <DialogFooter className="gap-2">
+              {syncResults ? (
+                <Button size="sm" onClick={() => { setSyncOpen(false); setSelectedIds([]); setSyncResults(null); }}>
+                  Fechar
+                </Button>
+              ) : (
+                <>
+                  <Button variant="outline" size="sm" onClick={() => setSyncOpen(false)} disabled={syncing}>
+                    Cancelar
+                  </Button>
+                  <Button size="sm" onClick={handleSync} disabled={!selectedIds.length || syncing} className="gap-1.5">
+                    {syncing
+                      ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      : <Zap className="w-3.5 h-3.5" />}
+                    {syncing ? "Sincronizando..." : `Sincronizar${selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}`}
+                  </Button>
+                </>
+              )}
             </DialogFooter>
           </DialogContent>
         </Dialog>

@@ -150,7 +150,7 @@ export default function PatternIntelligence() {
   const [walkthroughStep, setWalkthroughStep] = useState(0);
 
   // Real data state
-  const [selectedPlatform, setSelectedPlatform] = useState<"meta_ads" | "google_ads">("meta_ads");
+  const [selectedPlatform, setSelectedPlatform] = useState<"meta_ads" | "google_ads" | "dv360">("meta_ads");
   const [syncedAccounts, setSyncedAccounts] = useState<{ account_id: string; account_name: string | null; platform: string }[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<string>("mock");
   const [realData, setRealData] = useState<FunnelDailyRecord[] | null>(null);
@@ -404,13 +404,14 @@ export default function PatternIntelligence() {
           <div className="flex flex-col items-end gap-1.5">
             <div className="flex items-center gap-2 flex-wrap justify-end">
             {/* Platform selector */}
-            <Select value={selectedPlatform} onValueChange={(v) => setSelectedPlatform(v as "meta_ads" | "google_ads")}>
+            <Select value={selectedPlatform} onValueChange={(v) => setSelectedPlatform(v as "meta_ads" | "google_ads" | "dv360")}>
               <SelectTrigger className="w-[130px] h-8 text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="meta_ads">Meta Ads</SelectItem>
                 <SelectItem value="google_ads">Google Ads</SelectItem>
+                <SelectItem value="dv360">DV360</SelectItem>
               </SelectContent>
             </Select>
             {/* Account selector */}
