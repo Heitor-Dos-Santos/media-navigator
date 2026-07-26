@@ -222,7 +222,7 @@ export default function Planning() {
     } else {
       const { error: e } = await supabase
         .from("media_plans")
-        .insert(row);
+        .insert(row as any);
       error = e;
     }
 
