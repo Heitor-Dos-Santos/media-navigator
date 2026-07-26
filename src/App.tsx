@@ -8,6 +8,7 @@ import { TenantProvider } from "@/contexts/TenantContext";
 import { RBACProvider } from "@/contexts/RBACContext";
 import { useAuth } from "@/hooks/useAuth";
 import Login from "./pages/Login";
+import ResetPassword from "./pages/ResetPassword";
 import Dashboard from "./pages/Dashboard";
 import ExecutiveDashboard from "./pages/ExecutiveDashboard";
 import AgencyIndex from "./pages/AgencyIndex";
@@ -77,6 +78,7 @@ const App = () => (
             <BrowserRouter>
               <Routes>
                 <Route path="/login" element={<Login />} />
+                <Route path="/reset-password" element={<ResetPassword />} />
                 <Route element={<AuthGuard><Outlet /></AuthGuard>}>
                   {/* OPERAÇÃO */}
                   <Route path="/" element={<Dashboard />} />
