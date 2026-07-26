@@ -78,6 +78,7 @@ const App = () => (
             <BrowserRouter>
               <Routes>
                 <Route path="/login" element={<Login />} />
+                <Route path="/reset-password" element={<ResetPassword />} />
                 <Route element={<AuthGuard><Outlet /></AuthGuard>}>
                   {/* OPERAÇÃO */}
                   <Route path="/" element={<Dashboard />} />
