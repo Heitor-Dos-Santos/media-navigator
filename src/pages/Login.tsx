@@ -21,6 +21,7 @@ export default function Login() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    setInfo("");
     setLoading(true);
 
     try {
@@ -36,12 +37,24 @@ export default function Login() {
         } else {
           navigate("/");
         }
-      } else {
+      } else if (mode === "signup") {
         const { error } = await signUp(email, password, name);
         if (error) {
           setError(error.message);
         } else {
           setEmailSent(true);
+        }
+      } else {
+        // forgot password
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/reset-password`,
+        });
+        if (error) {
+          setError(error.message);
+        } else {
+          setInfo(
+            "Se este email estiver cadastrado, você receberá um link para redefinir sua senha em instantes."
+          );
         }
       }
     } finally {
