@@ -33,7 +33,7 @@ export function useLeads(filters?: {
   return useQuery({
     queryKey: ["leads", filters],
     queryFn: async () => {
-      let query = supabase
+      let query: any = (supabase as any)
         .from("leads")
         .select("*")
         .order("created_at", { ascending: false })
@@ -48,7 +48,7 @@ export function useLeads(filters?: {
 
       const { data, error } = await query;
       if (error) throw error;
-      return (data ?? []) as Lead[];
+      return (data ?? []) as unknown as Lead[];
     },
     refetchInterval: 30_000, // atualiza a cada 30s
   });
