@@ -41,7 +41,7 @@ export function MetaAdsConfigModal({ open, onOpenChange }: MetaAdsConfigModalPro
 
     try {
       // Salva o verify_token na tabela de config
-      const { error: dbError } = await supabase
+      const { error: dbError } = await (supabase as any)
         .from("meta_ads_config")
         .upsert(
           {

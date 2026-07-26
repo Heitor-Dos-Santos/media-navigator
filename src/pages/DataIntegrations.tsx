@@ -129,29 +129,29 @@ function DSPTab() {
   const [dv360Connecting, setDv360Connecting] = useState(false);
 
   const fetchMetaConnections = useCallback(async () => {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from("platform_connections")
       .select("account_id, account_name, connected_at")
       .eq("platform", "meta_ads");
-    if (!error && data) setMetaConnections(data);
+    if (!error && data) setMetaConnections(data as PlatformConnectionRow[]);
     setMetaLoading(false);
   }, []);
 
   const fetchGoogleConnections = useCallback(async () => {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from("platform_connections")
       .select("account_id, account_name, connected_at")
       .eq("platform", "google_ads");
-    if (!error && data) setGoogleConnections(data);
+    if (!error && data) setGoogleConnections(data as PlatformConnectionRow[]);
     setGoogleLoading(false);
   }, []);
 
   const fetchDv360Connections = useCallback(async () => {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from("platform_connections")
       .select("account_id, account_name, connected_at")
       .eq("platform", "dv360");
-    if (!error && data) setDv360Connections(data);
+    if (!error && data) setDv360Connections(data as PlatformConnectionRow[]);
     setDv360Loading(false);
   }, []);
 
@@ -236,7 +236,7 @@ function DSPTab() {
   }, []);
 
   const handleDisconnectMeta = useCallback(async () => {
-    const { error } = await supabase.from("platform_connections").delete().eq("platform", "meta_ads");
+    const { error } = await (supabase as any).from("platform_connections").delete().eq("platform", "meta_ads");
     if (error) {
       toast({ title: "Erro ao desconectar", description: error.message, variant: "destructive" });
       return;
@@ -298,7 +298,7 @@ function DSPTab() {
   }, [fetchGoogleConnections]);
 
   const handleDisconnectGoogle = useCallback(async () => {
-    const { error } = await supabase.from("platform_connections").delete().eq("platform", "google_ads");
+    const { error } = await (supabase as any).from("platform_connections").delete().eq("platform", "google_ads");
     if (error) {
       toast({ title: "Erro ao desconectar", description: error.message, variant: "destructive" });
       return;
@@ -354,7 +354,7 @@ function DSPTab() {
   }, [fetchDv360Connections]);
 
   const handleDisconnectDV360 = useCallback(async () => {
-    const { error } = await supabase.from("platform_connections").delete().eq("platform", "dv360");
+    const { error } = await (supabase as any).from("platform_connections").delete().eq("platform", "dv360");
     if (error) {
       toast({ title: "Erro ao desconectar", description: error.message, variant: "destructive" });
       return;
