@@ -110,9 +110,44 @@ Deno.serve(async (req) => {
 
   // ─── POST: recebimento de leads ───────────────────────────────────────────────
   if (req.method === "POST") {
+    // Verifica assinatura HMAC do Meta para prevenir payloads forjados
+    const appSecret = Deno.env.get("META_APP_SECRET");
+    if (!appSecret) {
+      console.error("META_APP_SECRET não configurado");
+      return new Response("Server misconfigured", { status: 500, headers: corsHeaders });
+    }
+    const sigHeader = req.headers.get("x-hub-signature-256") ?? "";
+    const rawBody = await req.arrayBuffer();
+    try {
+      const key = await crypto.subtle.importKey(
+        "raw",
+        new TextEncoder().encode(appSecret),
+        { name: "HMAC", hash: "SHA-256" },
+        false,
+        ["sign"],
+      );
+      const macBuf = await crypto.subtle.sign("HMAC", key, rawBody);
+      const expected = "sha256=" + Array.from(new Uint8Array(macBuf))
+        .map((b) => b.toString(16).padStart(2, "0")).join("");
+      // Comparação em tempo constante
+      if (sigHeader.length !== expected.length) {
+        return new Response("Forbidden", { status: 403, headers: corsHeaders });
+      }
+      let diff = 0;
+      for (let i = 0; i < expected.length; i++) {
+        diff |= expected.charCodeAt(i) ^ sigHeader.charCodeAt(i);
+      }
+      if (diff !== 0) {
+        return new Response("Forbidden", { status: 403, headers: corsHeaders });
+      }
+    } catch (e) {
+      console.error("Falha ao verificar assinatura:", e);
+      return new Response("Forbidden", { status: 403, headers: corsHeaders });
+    }
+
     let body: Record<string, unknown>;
     try {
-      body = await req.json();
+      body = JSON.parse(new TextDecoder().decode(rawBody));
     } catch {
       return new Response(
         JSON.stringify({ error: "Invalid JSON" }),
