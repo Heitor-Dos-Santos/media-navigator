@@ -85,13 +85,13 @@ export function useMetaAdsConfig() {
   return useQuery({
     queryKey: ["meta-ads-config"],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from("meta_ads_config")
         .select("*")
         .maybeSingle();
 
       if (error) throw error;
-      return data;
+      return data as { is_active?: boolean } | null;
     },
   });
 }
@@ -99,7 +99,7 @@ export function useMetaAdsConfig() {
 export function useRetryLead() {
   const qc = useQueryClient();
   return async (leadId: string) => {
-    await supabase.from("leads").update({ status: "pending" }).eq("id", leadId);
+    await (supabase as any).from("leads").update({ status: "pending" }).eq("id", leadId);
     qc.invalidateQueries({ queryKey: ["leads"] });
     qc.invalidateQueries({ queryKey: ["lead-stats"] });
   };
