@@ -8,6 +8,7 @@ import { TenantProvider } from "@/contexts/TenantContext";
 import { RBACProvider } from "@/contexts/RBACContext";
 import { useAuth } from "@/hooks/useAuth";
 import Login from "./pages/Login";
+import ResetPassword from "./pages/ResetPassword";
 import Dashboard from "./pages/Dashboard";
 import ExecutiveDashboard from "./pages/ExecutiveDashboard";
 import AgencyIndex from "./pages/AgencyIndex";
