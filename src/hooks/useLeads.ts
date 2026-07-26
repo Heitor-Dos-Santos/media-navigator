@@ -58,13 +58,13 @@ export function useLeadStats() {
   return useQuery({
     queryKey: ["lead-stats"],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from("leads")
         .select("status, created_at");
 
       if (error) throw error;
 
-      const leads = data ?? [];
+      const leads = (data ?? []) as Array<{ status: string; created_at: string }>;
       const today = new Date().toDateString();
 
       const stats: LeadStats = {
