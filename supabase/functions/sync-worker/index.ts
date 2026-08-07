@@ -7,7 +7,7 @@ const MAX_JOBS_PER_RUN = 5;
 const DV360_POLL_INTERVAL_MS = 5000;
 const DV360_POLL_MAX_ATTEMPTS = 9; // ~45s de polling — cabe dentro do limite de execução da function.
 
-type SyncJob = { id: string; user_id: string; platform: string; account_id: string };
+type SyncJob = { id: string; user_id: string; platform: string; account_id: string; range_days: number };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -23,6 +23,7 @@ async function callFunction(baseUrl: string, serviceRoleKey: string, name: strin
 async function runDv360Job(baseUrl: string, serviceRoleKey: string, job: SyncJob): Promise<{ ok: boolean; error?: string }> {
   const startRes = await callFunction(baseUrl, serviceRoleKey, "dv360-sync", {
     account_ids: [job.account_id],
+    range_days: job.range_days,
     _internal_user_id: job.user_id,
   }) as { ok?: boolean; jobs?: { account_id: string; query_id?: string; report_id?: string; error?: string }[]; error?: string };
 
@@ -52,6 +53,7 @@ async function runDv360Job(baseUrl: string, serviceRoleKey: string, job: SyncJob
 async function runSimpleJob(baseUrl: string, serviceRoleKey: string, functionName: string, job: SyncJob): Promise<{ ok: boolean; error?: string }> {
   const res = await callFunction(baseUrl, serviceRoleKey, functionName, {
     account_ids: [job.account_id],
+    range_days: job.range_days,
     _internal_user_id: job.user_id,
   }) as { ok?: boolean; results?: { account_id: string; error?: string }[]; error?: string };
 
@@ -75,7 +77,7 @@ Deno.serve(async (req) => {
   try {
     const { data: jobs, error: fetchError } = await supabase
       .from("sync_jobs")
-      .select("id, user_id, platform, account_id")
+      .select("id, user_id, platform, account_id, range_days")
       .eq("status", "queued")
       .order("created_at", { ascending: true })
       .limit(MAX_JOBS_PER_RUN);

@@ -14,13 +14,15 @@ Deno.serve(async (req) => {
   try {
     const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-    const body = await req.json() as { account_ids: string[]; _internal_user_id?: string };
+    const body = await req.json() as { account_ids: string[]; range_days?: number; _internal_user_id?: string };
     const auth = await resolveUserId(req, supabase, body);
     if ("errorResponse" in auth) return auth.errorResponse;
     const { userId } = auth;
 
     const { account_ids } = body;
     if (!account_ids?.length) return Response.json({ error: "Nenhuma conta selecionada" }, { status: 400 });
+
+    const rangeDays = body.range_days ?? 90;
 
     const { data: connections } = await supabase
       .from("platform_connections")
@@ -57,7 +59,7 @@ Deno.serve(async (req) => {
             .eq("user_id", userId).eq("platform", "dv360").eq("account_id", conn.account_id);
         }
 
-        const { queryId, reportId } = await createAndRunQuery(conn.account_id, accessToken!);
+        const { queryId, reportId } = await createAndRunQuery(conn.account_id, accessToken!, rangeDays);
         jobs.push({ account_id: conn.account_id, query_id: queryId, report_id: reportId });
         // Relatório iniciado — dv360-sync-poll é quem grava o resultado final (ready/failed)
         // quando o polling do frontend resolver.

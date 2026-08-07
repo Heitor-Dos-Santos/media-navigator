@@ -757,7 +757,10 @@ function MetaAdsCard({
               toast({ title: "Erro ao selecionar contas", description: error.message, variant: "destructive" });
               return;
             }
-            const jobRows = discoveredAccounts.filter(a => ids.includes(a.id)).map(a => ({ platform: "meta_ads", account_id: a.account_id }));
+            const jobRows = discoveredAccounts.filter(a => ids.includes(a.id)).flatMap(a => ([
+              { platform: "meta_ads", account_id: a.account_id, range_days: 7 },
+              { platform: "meta_ads", account_id: a.account_id, range_days: 90 },
+            ]));
             if (jobRows.length > 0) await (supabase as any).from("sync_jobs").insert(jobRows);
             toast({ title: "Contas selecionadas!", description: `${ids.length} conta${ids.length > 1 ? "s" : ""} adicionada${ids.length > 1 ? "s" : ""} ao MediaHub. A sincronização vai começar automaticamente.` });
             onAccountsUpdated();
@@ -966,7 +969,10 @@ function GoogleAdsCard({
               toast({ title: "Erro ao selecionar contas", description: error.message, variant: "destructive" });
               return;
             }
-            const jobRows = discoveredAccounts.filter(a => ids.includes(a.id)).map(a => ({ platform: "google_ads", account_id: a.account_id }));
+            const jobRows = discoveredAccounts.filter(a => ids.includes(a.id)).flatMap(a => ([
+              { platform: "google_ads", account_id: a.account_id, range_days: 7 },
+              { platform: "google_ads", account_id: a.account_id, range_days: 90 },
+            ]));
             if (jobRows.length > 0) await (supabase as any).from("sync_jobs").insert(jobRows);
             toast({ title: "Contas selecionadas!", description: `${ids.length} conta${ids.length > 1 ? "s" : ""} adicionada${ids.length > 1 ? "s" : ""} ao MediaHub. A sincronização vai começar automaticamente.` });
             onAccountsUpdated();
@@ -1215,7 +1221,10 @@ function DV360Card({
               toast({ title: "Erro ao selecionar contas", description: error.message, variant: "destructive" });
               return;
             }
-            const jobRows = discoveredAccounts.filter(a => ids.includes(a.id)).map(a => ({ platform: "dv360", account_id: a.account_id }));
+            const jobRows = discoveredAccounts.filter(a => ids.includes(a.id)).flatMap(a => ([
+              { platform: "dv360", account_id: a.account_id, range_days: 7 },
+              { platform: "dv360", account_id: a.account_id, range_days: 90 },
+            ]));
             if (jobRows.length > 0) await (supabase as any).from("sync_jobs").insert(jobRows);
             toast({ title: "Contas selecionadas!", description: `${ids.length} conta${ids.length > 1 ? "s" : ""} adicionada${ids.length > 1 ? "s" : ""} ao MediaHub. A sincronização vai começar automaticamente.` });
             onAccountsUpdated();

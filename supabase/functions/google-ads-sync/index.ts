@@ -45,10 +45,10 @@ async function refreshAccessToken(refreshToken: string, clientId: string, client
   return { accessToken: data.access_token, expiresAt: new Date(Date.now() + (data.expires_in ?? 3600) * 1000).toISOString() };
 }
 
-async function fetchCampaignMetrics(targetCustomerId: string, loginCustomerId: string, accessToken: string, developerToken: string): Promise<GaqlRow[]> {
+async function fetchCampaignMetrics(targetCustomerId: string, loginCustomerId: string, accessToken: string, developerToken: string, daysBack: number): Promise<GaqlRow[]> {
   // GAQL "DURING" só aceita literais fixas (LAST_30_DAYS etc.) — não existe LAST_90_DAYS, por isso usamos BETWEEN com datas explícitas.
   const end = new Date();
-  const start = new Date(end.getTime() - 90 * 24 * 60 * 60 * 1000);
+  const start = new Date(end.getTime() - daysBack * 24 * 60 * 60 * 1000);
   const fmt = (d: Date) => d.toISOString().slice(0, 10);
 
   const query = `
@@ -97,13 +97,15 @@ Deno.serve(async (req) => {
   try {
     const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-    const body = await req.json() as { account_ids: string[]; _internal_user_id?: string };
+    const body = await req.json() as { account_ids: string[]; range_days?: number; _internal_user_id?: string };
     const auth = await resolveUserId(req, supabase, body);
     if ("errorResponse" in auth) return auth.errorResponse;
     const { userId } = auth;
 
     const { account_ids } = body;
     if (!account_ids?.length) return Response.json({ error: "Nenhuma conta selecionada" }, { status: 400 });
+
+    const rangeDays = body.range_days ?? 90;
 
     const { data: connections } = await supabase
       .from("platform_connections")
@@ -146,7 +148,7 @@ Deno.serve(async (req) => {
         // Contas descobertas via MCC guardam por qual gerenciadora foram acessadas — o Google exige
         // esse id no header "login-customer-id" pra autorizar o acesso via hierarquia.
         const loginId = conn.manager_customer_id ?? conn.account_id;
-        const rows = await fetchCampaignMetrics(conn.account_id, loginId, accessToken!, developerToken);
+        const rows = await fetchCampaignMetrics(conn.account_id, loginId, accessToken!, developerToken, rangeDays);
 
         if (rows.length === 0) {
           results.push({ account_id: conn.account_id, days: 0, campaigns: 0, error: "Sem dados nos últimos 90 dias." });

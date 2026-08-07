@@ -26,6 +26,13 @@ function extractRevenue(actionValues: ActionRow[] = []): number {
   return actionValues.filter(a => a.action_type.includes("purchase")).reduce((s, a) => s + safeNum(a.value), 0);
 }
 
+// Meta só aceita presets fixos (não um N arbitrário de dias) — mapeia pro preset mais próximo.
+function daysToPreset(days: number): string {
+  if (days <= 7) return "last_7d";
+  if (days <= 30) return "last_30d";
+  return "last_90d";
+}
+
 function classifyObjective(objective: string): "topo" | "meio" | "fundo" {
   const upper = (objective ?? "").toUpperCase();
   if (["BRAND_AWARENESS", "REACH", "AWARENESS", "VIDEO_VIEWS", "OUTCOME_AWARENESS"].some(o => upper.includes(o))) return "topo";
@@ -49,13 +56,15 @@ Deno.serve(async (req) => {
   try {
     const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-    const body = await req.json() as { account_ids: string[]; _internal_user_id?: string };
+    const body = await req.json() as { account_ids: string[]; range_days?: number; _internal_user_id?: string };
     const auth = await resolveUserId(req, supabase, body);
     if ("errorResponse" in auth) return auth.errorResponse;
     const { userId } = auth;
 
     const { account_ids } = body;
     if (!account_ids?.length) return Response.json({ error: "Nenhuma conta selecionada" }, { status: 400 });
+
+    const preset = daysToPreset(body.range_days ?? 90);
 
     const { data: connections } = await supabase
       .from("platform_connections")
@@ -94,7 +103,7 @@ Deno.serve(async (req) => {
         };
 
         // ── Account-level ──
-        let { rows, apiError } = await fetchInsights("last_90d", "account");
+        let { rows, apiError } = await fetchInsights(preset, "account");
         if (apiError) {
           results.push({ account_id: conn.account_id, days: 0, campaigns: 0, error: apiError });
           await updateSyncStatus(supabase, userId, "meta_ads", conn.account_id, classifySyncError(apiError), apiError);
@@ -179,7 +188,7 @@ Deno.serve(async (req) => {
 
         // ── Campaign-level ──
         let campaignRows_count = 0;
-        const { rows: campRows, apiError: campErr } = await fetchInsights("last_90d", "campaign");
+        const { rows: campRows, apiError: campErr } = await fetchInsights(preset, "campaign");
         if (!campErr && campRows && campRows.length > 0) {
           type CampAgg = Agg & { campaign_id: string; campaign_name: string; objective: string };
           const byCampDateStage: Record<string, CampAgg> = {};
