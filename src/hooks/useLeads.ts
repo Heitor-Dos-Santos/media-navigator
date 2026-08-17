@@ -33,7 +33,7 @@ export function useLeads(filters?: {
   return useQuery({
     queryKey: ["leads", filters],
     queryFn: async () => {
-      let query = supabase
+      let query: any = (supabase as any)
         .from("leads")
         .select("*")
         .order("created_at", { ascending: false })
@@ -48,7 +48,7 @@ export function useLeads(filters?: {
 
       const { data, error } = await query;
       if (error) throw error;
-      return (data ?? []) as Lead[];
+      return (data ?? []) as unknown as Lead[];
     },
     refetchInterval: 30_000, // atualiza a cada 30s
   });
@@ -58,13 +58,13 @@ export function useLeadStats() {
   return useQuery({
     queryKey: ["lead-stats"],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from("leads")
         .select("status, created_at");
 
       if (error) throw error;
 
-      const leads = data ?? [];
+      const leads = (data ?? []) as Array<{ status: string; created_at: string }>;
       const today = new Date().toDateString();
 
       const stats: LeadStats = {
@@ -85,13 +85,13 @@ export function useMetaAdsConfig() {
   return useQuery({
     queryKey: ["meta-ads-config"],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from("meta_ads_config")
         .select("*")
         .maybeSingle();
 
       if (error) throw error;
-      return data;
+      return data as { is_active?: boolean } | null;
     },
   });
 }
@@ -99,7 +99,7 @@ export function useMetaAdsConfig() {
 export function useRetryLead() {
   const qc = useQueryClient();
   return async (leadId: string) => {
-    await supabase.from("leads").update({ status: "pending" }).eq("id", leadId);
+    await (supabase as any).from("leads").update({ status: "pending" }).eq("id", leadId);
     qc.invalidateQueries({ queryKey: ["leads"] });
     qc.invalidateQueries({ queryKey: ["lead-stats"] });
   };

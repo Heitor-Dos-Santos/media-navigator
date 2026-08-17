@@ -17,326 +17,498 @@ export type Database = {
       clients: {
         Row: {
           address: string | null
+          bairro: string | null
           city: string | null
-          cnpj: string
+          cnpj: string | null
+          codigo: string | null
           company_name: string
+          complemento: string | null
           contact_email: string | null
           contact_name: string | null
           contact_phone: string | null
           country: string | null
+          cpf: string | null
           created_at: string
+          data_fundacao: string | null
+          email_contato: string | null
           id: string
+          id_estrangeiro: string | null
           municipal_registration: string | null
           notes: string | null
+          numero: string | null
           rebate_tiers: Json | null
           state: string | null
           state_registration: string | null
+          status: string | null
+          telefone: string | null
           trade_name: string | null
           updated_at: string
+          user_id: string | null
           zip_code: string | null
         }
         Insert: {
           address?: string | null
+          bairro?: string | null
           city?: string | null
-          cnpj: string
+          cnpj?: string | null
+          codigo?: string | null
           company_name: string
+          complemento?: string | null
           contact_email?: string | null
           contact_name?: string | null
           contact_phone?: string | null
           country?: string | null
+          cpf?: string | null
           created_at?: string
+          data_fundacao?: string | null
+          email_contato?: string | null
           id?: string
+          id_estrangeiro?: string | null
           municipal_registration?: string | null
           notes?: string | null
+          numero?: string | null
           rebate_tiers?: Json | null
           state?: string | null
           state_registration?: string | null
+          status?: string | null
+          telefone?: string | null
           trade_name?: string | null
           updated_at?: string
+          user_id?: string | null
           zip_code?: string | null
         }
         Update: {
           address?: string | null
+          bairro?: string | null
           city?: string | null
-          cnpj?: string
+          cnpj?: string | null
+          codigo?: string | null
           company_name?: string
+          complemento?: string | null
           contact_email?: string | null
           contact_name?: string | null
           contact_phone?: string | null
           country?: string | null
+          cpf?: string | null
           created_at?: string
+          data_fundacao?: string | null
+          email_contato?: string | null
           id?: string
+          id_estrangeiro?: string | null
           municipal_registration?: string | null
           notes?: string | null
+          numero?: string | null
           rebate_tiers?: Json | null
           state?: string | null
           state_registration?: string | null
+          status?: string | null
+          telefone?: string | null
           trade_name?: string | null
           updated_at?: string
+          user_id?: string | null
           zip_code?: string | null
         }
         Relationships: []
       }
-      evolution_api_config: {
+      efficiency_scores: {
         Row: {
-          api_key: string
+          agency_id: string | null
+          bottleneck_dimension: string | null
+          bottleneck_severity: string | null
+          calculated_at: string | null
+          campaign_id: string
+          campaign_objective_type: string
+          client_id: string | null
+          cost_efficiency_score: number | null
           created_at: string
+          funnel_bottom_clicks: number | null
+          funnel_bottom_impressions: number | null
+          funnel_conversions: number | null
+          funnel_mid_clicks: number | null
+          funnel_mid_impressions: number | null
+          funnel_stage: string
+          funnel_top_clicks: number | null
+          funnel_top_impressions: number | null
           id: string
-          is_active: boolean
-          server_url: string
-          updated_at: string
+          inventory_quality_score: number | null
+          mbes_classification: string | null
+          mbes_score: number
+          mes_classification: string | null
+          mes_model: string
+          mes_score: number
+          operational_quality_score: number | null
+          oqs_classification: string | null
+          oqs_score: number | null
+          period_end: string | null
+          period_start: string | null
+          platform: string
+          raw_metrics: Json | null
+          recorded_at: string
+          scalability_score: number | null
+          sps_classification: string | null
+          sps_score: number | null
+          structural_stability_score: number | null
+          user_id: string
         }
         Insert: {
-          api_key: string
+          agency_id?: string | null
+          bottleneck_dimension?: string | null
+          bottleneck_severity?: string | null
+          calculated_at?: string | null
+          campaign_id: string
+          campaign_objective_type: string
+          client_id?: string | null
+          cost_efficiency_score?: number | null
           created_at?: string
+          funnel_bottom_clicks?: number | null
+          funnel_bottom_impressions?: number | null
+          funnel_conversions?: number | null
+          funnel_mid_clicks?: number | null
+          funnel_mid_impressions?: number | null
+          funnel_stage: string
+          funnel_top_clicks?: number | null
+          funnel_top_impressions?: number | null
           id?: string
-          is_active?: boolean
-          server_url: string
-          updated_at?: string
+          inventory_quality_score?: number | null
+          mbes_classification?: string | null
+          mbes_score: number
+          mes_classification?: string | null
+          mes_model: string
+          mes_score: number
+          operational_quality_score?: number | null
+          oqs_classification?: string | null
+          oqs_score?: number | null
+          period_end?: string | null
+          period_start?: string | null
+          platform: string
+          raw_metrics?: Json | null
+          recorded_at?: string
+          scalability_score?: number | null
+          sps_classification?: string | null
+          sps_score?: number | null
+          structural_stability_score?: number | null
+          user_id: string
         }
         Update: {
-          api_key?: string
+          agency_id?: string | null
+          bottleneck_dimension?: string | null
+          bottleneck_severity?: string | null
+          calculated_at?: string | null
+          campaign_id?: string
+          campaign_objective_type?: string
+          client_id?: string | null
+          cost_efficiency_score?: number | null
           created_at?: string
+          funnel_bottom_clicks?: number | null
+          funnel_bottom_impressions?: number | null
+          funnel_conversions?: number | null
+          funnel_mid_clicks?: number | null
+          funnel_mid_impressions?: number | null
+          funnel_stage?: string
+          funnel_top_clicks?: number | null
+          funnel_top_impressions?: number | null
           id?: string
-          is_active?: boolean
-          server_url?: string
-          updated_at?: string
+          inventory_quality_score?: number | null
+          mbes_classification?: string | null
+          mbes_score?: number
+          mes_classification?: string | null
+          mes_model?: string
+          mes_score?: number
+          operational_quality_score?: number | null
+          oqs_classification?: string | null
+          oqs_score?: number | null
+          period_end?: string | null
+          period_start?: string | null
+          platform?: string
+          raw_metrics?: Json | null
+          recorded_at?: string
+          scalability_score?: number | null
+          sps_classification?: string | null
+          sps_score?: number | null
+          structural_stability_score?: number | null
+          user_id?: string
         }
         Relationships: []
       }
-      leads: {
+      evolution_api_configs: {
         Row: {
-          ad_account_id: string | null
-          ad_id: string | null
-          campaign_id: string | null
-          campaign_name: string
+          api_key: string
+          base_url: string
           created_at: string
-          email: string
-          form_id: string | null
           id: string
-          name: string
-          page_id: string | null
-          phone: string
-          raw_payload: Json | null
-          source: string
-          status: string
+          instance_name: string
+          is_active: boolean
           updated_at: string
+          user_id: string
         }
         Insert: {
-          ad_account_id?: string | null
-          ad_id?: string | null
-          campaign_id?: string | null
-          campaign_name?: string
+          api_key: string
+          base_url: string
           created_at?: string
-          email?: string
-          form_id?: string | null
           id?: string
-          name?: string
-          page_id?: string | null
-          phone?: string
-          raw_payload?: Json | null
-          source?: string
-          status?: string
+          instance_name: string
+          is_active?: boolean
           updated_at?: string
+          user_id: string
         }
         Update: {
-          ad_account_id?: string | null
-          ad_id?: string | null
-          campaign_id?: string | null
-          campaign_name?: string
+          api_key?: string
+          base_url?: string
           created_at?: string
-          email?: string
-          form_id?: string | null
           id?: string
-          name?: string
-          page_id?: string | null
-          phone?: string
-          raw_payload?: Json | null
-          source?: string
-          status?: string
+          instance_name?: string
+          is_active?: boolean
           updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }
       media_plans: {
         Row: {
           active_scenario_id: string | null
-          campaign: string | null
-          client: string | null
-          client_id: string | null
+          campaign: string
+          client: string
+          company_logo: string | null
           created_at: string
           id: string
-          lines: Json | null
-          period_end: string | null
-          period_start: string | null
+          plan_id: string
           quarter: string | null
-          scenarios: Json | null
-          status: string | null
+          scenarios: Json
+          status: string
           taxonomy: string | null
-          total_budget: number | null
           updated_at: string
-          year: string | null
+          user_id: string
+          year: string
         }
         Insert: {
           active_scenario_id?: string | null
-          campaign?: string | null
-          client?: string | null
-          client_id?: string | null
+          campaign: string
+          client: string
+          company_logo?: string | null
           created_at?: string
           id?: string
-          lines?: Json | null
-          period_end?: string | null
-          period_start?: string | null
+          plan_id: string
           quarter?: string | null
-          scenarios?: Json | null
-          status?: string | null
+          scenarios?: Json
+          status?: string
           taxonomy?: string | null
-          total_budget?: number | null
           updated_at?: string
-          year?: string | null
+          user_id: string
+          year: string
         }
         Update: {
           active_scenario_id?: string | null
-          campaign?: string | null
-          client?: string | null
-          client_id?: string | null
+          campaign?: string
+          client?: string
+          company_logo?: string | null
           created_at?: string
           id?: string
-          lines?: Json | null
-          period_end?: string | null
-          period_start?: string | null
+          plan_id?: string
           quarter?: string | null
-          scenarios?: Json | null
-          status?: string | null
+          scenarios?: Json
+          status?: string
           taxonomy?: string | null
-          total_budget?: number | null
           updated_at?: string
-          year?: string | null
+          user_id?: string
+          year?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "media_plans_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
-      meta_ads_config: {
+      meta_leads: {
+        Row: {
+          ad_account_id: string | null
+          ad_id: string | null
+          campaign_name: string | null
+          created_at: string
+          email: string | null
+          form_id: string | null
+          full_name: string | null
+          id: string
+          lead_id: string
+          page_id: string | null
+          phone: string | null
+          raw_field_data: Json | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ad_account_id?: string | null
+          ad_id?: string | null
+          campaign_name?: string | null
+          created_at?: string
+          email?: string | null
+          form_id?: string | null
+          full_name?: string | null
+          id?: string
+          lead_id: string
+          page_id?: string | null
+          phone?: string | null
+          raw_field_data?: Json | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ad_account_id?: string | null
+          ad_id?: string | null
+          campaign_name?: string | null
+          created_at?: string
+          email?: string | null
+          form_id?: string | null
+          full_name?: string | null
+          id?: string
+          lead_id?: string
+          page_id?: string | null
+          phone?: string | null
+          raw_field_data?: Json | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      meta_webhook_configs: {
         Row: {
           created_at: string
           id: string
           is_active: boolean
+          page_access_token: string | null
           page_id: string | null
           updated_at: string
+          user_id: string
           verify_token: string
         }
         Insert: {
           created_at?: string
           id?: string
           is_active?: boolean
+          page_access_token?: string | null
           page_id?: string | null
           updated_at?: string
-          verify_token?: string
+          user_id: string
+          verify_token: string
         }
         Update: {
           created_at?: string
           id?: string
           is_active?: boolean
+          page_access_token?: string | null
           page_id?: string | null
           updated_at?: string
+          user_id?: string
           verify_token?: string
         }
         Relationships: []
       }
-      platform_connections: {
+      profiles: {
         Row: {
-          access_token: string
-          account_id: string
-          account_name: string | null
-          connected_at: string
+          created_at: string
+          email: string | null
+          full_name: string | null
           id: string
-          platform: string
-          scopes: string | null
-          status: string
-          token_expires_at: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
-          access_token: string
-          account_id?: string
-          account_name?: string | null
-          connected_at?: string
+          created_at?: string
+          email?: string | null
+          full_name?: string | null
           id?: string
-          platform: string
-          scopes?: string | null
-          status?: string
-          token_expires_at?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
-          access_token?: string
-          account_id?: string
-          account_name?: string | null
-          connected_at?: string
+          created_at?: string
+          email?: string | null
+          full_name?: string | null
           id?: string
-          platform?: string
-          scopes?: string | null
-          status?: string
-          token_expires_at?: string | null
           updated_at?: string
           user_id?: string
         }
         Relationships: []
       }
-      whatsapp_configs: {
+      user_module_permissions: {
         Row: {
-          api_key: string
           created_at: string
+          granted: boolean
           id: string
-          instance_name: string
-          is_active: boolean
-          label: string
-          message_template: string
-          phone_to: string
-          phones_to: string[]
-          server_url: string
-          trigger_type: string
-          trigger_value: string
+          module_key: string
           updated_at: string
+          user_id: string
         }
         Insert: {
-          api_key: string
           created_at?: string
+          granted?: boolean
           id?: string
-          instance_name: string
-          is_active?: boolean
-          label: string
-          message_template?: string
-          phone_to: string
-          phones_to?: string[]
-          server_url: string
-          trigger_type?: string
-          trigger_value: string
+          module_key: string
           updated_at?: string
+          user_id: string
         }
         Update: {
-          api_key?: string
+          created_at?: string
+          granted?: boolean
+          id?: string
+          module_key?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
           created_at?: string
           id?: string
-          instance_name?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
+      whatsapp_routing_rules: {
+        Row: {
+          created_at: string
+          destination_numbers: string[]
+          id: string
+          is_active: boolean
+          name: string
+          source_type: string
+          source_value: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          destination_numbers?: string[]
+          id?: string
           is_active?: boolean
-          label?: string
-          message_template?: string
-          phone_to?: string
-          phones_to?: string[]
-          server_url?: string
-          trigger_type?: string
-          trigger_value?: string
+          name: string
+          source_type?: string
+          source_value?: string | null
           updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          destination_numbers?: string[]
+          id?: string
+          is_active?: boolean
+          name?: string
+          source_type?: string
+          source_value?: string | null
+          updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -348,7 +520,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "gestor" | "operador" | "super_admin"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -475,6 +647,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "gestor", "operador", "super_admin"],
+    },
   },
 } as const

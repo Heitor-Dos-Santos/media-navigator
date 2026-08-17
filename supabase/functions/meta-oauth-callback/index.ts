@@ -126,9 +126,31 @@ Deno.serve(async (req) => {
           status: "active",
         }];
 
-    const { error: upsertError } = await supabase
+    // Contas novas entram com is_selected=false (o usuário ainda não escolheu usá-las) —
+    // mas contas já existentes não podem ter is_selected/sync_status resetados toda vez
+    // que o usuário reautentica, então separamos insert (com esses defaults) de update
+    // (só as colunas de token, sem tocar em is_selected/sync_status).
+    const { data: existingRows } = await supabase
       .from("platform_connections")
-      .upsert(rows, { onConflict: "user_id,platform,account_id" });
+      .select("account_id")
+      .eq("user_id", userId)
+      .eq("platform", "meta_ads");
+    const existingIds = new Set((existingRows ?? []).map((r: { account_id: string }) => r.account_id));
+
+    const newRows = rows.filter((r) => !existingIds.has(r.account_id)).map((r) => ({
+      ...r, is_selected: false, sync_status: "pending",
+    }));
+    const updateRows = rows.filter((r) => existingIds.has(r.account_id));
+
+    const results: { error: unknown }[] = await Promise.all([
+      newRows.length > 0
+        ? supabase.from("platform_connections").upsert(newRows, { onConflict: "user_id,platform,account_id" })
+        : Promise.resolve({ error: null }),
+      updateRows.length > 0
+        ? supabase.from("platform_connections").upsert(updateRows, { onConflict: "user_id,platform,account_id" })
+        : Promise.resolve({ error: null }),
+    ]);
+    const upsertError = results.find((r: { error: unknown }) => r.error)?.error;
 
     if (upsertError) {
       console.error("Erro ao salvar platform_connections:", upsertError);

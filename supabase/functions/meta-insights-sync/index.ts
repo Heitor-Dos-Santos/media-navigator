@@ -1,4 +1,6 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { classifySyncError, updateSyncStatus } from "../_shared/syncStatus.ts";
+import { resolveUserId } from "../_shared/internalAuth.ts";
 
 const GRAPH_URL = "https://graph.facebook.com/v25.0";
 const ATTR_WINDOWS = encodeURIComponent(JSON.stringify(["1d_click", "7d_click", "1d_view", "7d_view"]));
@@ -24,6 +26,13 @@ function extractRevenue(actionValues: ActionRow[] = []): number {
   return actionValues.filter(a => a.action_type.includes("purchase")).reduce((s, a) => s + safeNum(a.value), 0);
 }
 
+// Meta só aceita presets fixos (não um N arbitrário de dias) — mapeia pro preset mais próximo.
+function daysToPreset(days: number): string {
+  if (days <= 7) return "last_7d";
+  if (days <= 30) return "last_30d";
+  return "last_90d";
+}
+
 function classifyObjective(objective: string): "topo" | "meio" | "fundo" {
   const upper = (objective ?? "").toUpperCase();
   if (["BRAND_AWARENESS", "REACH", "AWARENESS", "VIDEO_VIEWS", "OUTCOME_AWARENESS"].some(o => upper.includes(o))) return "topo";
@@ -47,20 +56,22 @@ Deno.serve(async (req) => {
   try {
     const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) return Response.json({ error: "Não autorizado" }, { status: 401 });
+    const body = await req.json() as { account_ids: string[]; range_days?: number; _internal_user_id?: string };
+    const auth = await resolveUserId(req, supabase, body);
+    if ("errorResponse" in auth) return auth.errorResponse;
+    const { userId } = auth;
 
-    const { data: { user }, error: authErr } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
-    if (authErr || !user) return Response.json({ error: "Token inválido" }, { status: 401 });
-
-    const { account_ids } = await req.json() as { account_ids: string[] };
+    const { account_ids } = body;
     if (!account_ids?.length) return Response.json({ error: "Nenhuma conta selecionada" }, { status: 400 });
+
+    const preset = daysToPreset(body.range_days ?? 90);
 
     const { data: connections } = await supabase
       .from("platform_connections")
       .select("account_id, account_name, access_token")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .eq("platform", "meta_ads")
+      .eq("is_selected", true)
       .in("account_id", account_ids);
 
     if (!connections?.length) return Response.json({ error: "Conexões não encontradas" }, { status: 404 });
@@ -92,15 +103,21 @@ Deno.serve(async (req) => {
         };
 
         // ── Account-level ──
-        let { rows, apiError } = await fetchInsights("last_90d", "account");
-        if (apiError) { results.push({ account_id: conn.account_id, days: 0, campaigns: 0, error: apiError }); await sleep(800); continue; }
+        let { rows, apiError } = await fetchInsights(preset, "account");
+        if (apiError) {
+          results.push({ account_id: conn.account_id, days: 0, campaigns: 0, error: apiError });
+          await updateSyncStatus(supabase, userId, "meta_ads", conn.account_id, classifySyncError(apiError), apiError);
+          await sleep(800); continue;
+        }
         if (rows!.length === 0) {
           await sleep(500);
           const fb = await fetchInsights("last_year", "account");
           if (fb.rows !== null) rows = fb.rows;
         }
         if (!rows || rows.length === 0) {
-          results.push({ account_id: conn.account_id, days: 0, campaigns: 0, error: "Sem dados (testado: 90d e last_year). A conta pode estar inativa." });
+          const msg = "Sem dados (testado: 90d e last_year). A conta pode estar inativa.";
+          results.push({ account_id: conn.account_id, days: 0, campaigns: 0, error: msg });
+          await updateSyncStatus(supabase, userId, "meta_ads", conn.account_id, "ready", null);
           await sleep(800);
           continue;
         }
@@ -146,7 +163,7 @@ Deno.serve(async (req) => {
         const accountRows = Object.entries(byDateStage).map(([key, g]) => {
           const [date, stage] = key.split("__");
           return {
-            user_id: user.id, platform: "meta_ads", account_id: conn.account_id, account_name: conn.account_name,
+            user_id: userId, platform: "meta_ads", account_id: conn.account_id, account_name: conn.account_name,
             campaign_id: "", campaign_name: null, objective: null,
             date, funnel_stage: stage,
             investimento: g.investimento,
@@ -171,7 +188,7 @@ Deno.serve(async (req) => {
 
         // ── Campaign-level ──
         let campaignRows_count = 0;
-        const { rows: campRows, apiError: campErr } = await fetchInsights("last_90d", "campaign");
+        const { rows: campRows, apiError: campErr } = await fetchInsights(preset, "campaign");
         if (!campErr && campRows && campRows.length > 0) {
           type CampAgg = Agg & { campaign_id: string; campaign_name: string; objective: string };
           const byCampDateStage: Record<string, CampAgg> = {};
@@ -205,7 +222,7 @@ Deno.serve(async (req) => {
           const campUpsertRows = Object.entries(byCampDateStage).map(([key, g]) => {
             const [campId, date, stage] = key.split("__");
             return {
-              user_id: user.id, platform: "meta_ads", account_id: conn.account_id, account_name: conn.account_name,
+              user_id: userId, platform: "meta_ads", account_id: conn.account_id, account_name: conn.account_name,
               campaign_id: campId, campaign_name: g.campaign_name, objective: g.objective,
               date, funnel_stage: stage,
               investimento: g.investimento,
@@ -227,8 +244,11 @@ Deno.serve(async (req) => {
         }
 
         results.push({ account_id: conn.account_id, days: accountDays, campaigns: campaignRows_count });
+        await updateSyncStatus(supabase, userId, "meta_ads", conn.account_id, "ready", null);
       } catch (e) {
-        results.push({ account_id: conn.account_id, days: 0, campaigns: 0, error: String(e) });
+        const msg = String(e);
+        results.push({ account_id: conn.account_id, days: 0, campaigns: 0, error: msg });
+        await updateSyncStatus(supabase, userId, "meta_ads", conn.account_id, classifySyncError(msg), msg);
       }
       await sleep(800);
     }

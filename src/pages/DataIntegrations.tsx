@@ -111,9 +111,14 @@ export default function DataIntegrations() {
 // ═════════════════════════════════════════════════════════
 
 interface PlatformConnectionRow {
+  id: string;
   account_id: string;
   account_name: string | null;
   connected_at: string;
+  is_selected: boolean;
+  sync_status: "pending" | "syncing" | "ready_partial" | "ready" | "auth_error" | "failed";
+  sync_error: string | null;
+  last_synced_at: string | null;
 }
 
 function DSPTab() {
@@ -128,30 +133,32 @@ function DSPTab() {
   const [dv360Loading, setDv360Loading] = useState(true);
   const [dv360Connecting, setDv360Connecting] = useState(false);
 
+  const CONNECTION_FIELDS = "id, account_id, account_name, connected_at, is_selected, sync_status, sync_error, last_synced_at";
+
   const fetchMetaConnections = useCallback(async () => {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from("platform_connections")
-      .select("account_id, account_name, connected_at")
+      .select(CONNECTION_FIELDS)
       .eq("platform", "meta_ads");
-    if (!error && data) setMetaConnections(data);
+    if (!error && data) setMetaConnections(data as PlatformConnectionRow[]);
     setMetaLoading(false);
   }, []);
 
   const fetchGoogleConnections = useCallback(async () => {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from("platform_connections")
-      .select("account_id, account_name, connected_at")
+      .select(CONNECTION_FIELDS)
       .eq("platform", "google_ads");
-    if (!error && data) setGoogleConnections(data);
+    if (!error && data) setGoogleConnections(data as PlatformConnectionRow[]);
     setGoogleLoading(false);
   }, []);
 
   const fetchDv360Connections = useCallback(async () => {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from("platform_connections")
-      .select("account_id, account_name, connected_at")
+      .select(CONNECTION_FIELDS)
       .eq("platform", "dv360");
-    if (!error && data) setDv360Connections(data);
+    if (!error && data) setDv360Connections(data as PlatformConnectionRow[]);
     setDv360Loading(false);
   }, []);
 
@@ -236,7 +243,7 @@ function DSPTab() {
   }, []);
 
   const handleDisconnectMeta = useCallback(async () => {
-    const { error } = await supabase.from("platform_connections").delete().eq("platform", "meta_ads");
+    const { error } = await (supabase as any).from("platform_connections").delete().eq("platform", "meta_ads");
     if (error) {
       toast({ title: "Erro ao desconectar", description: error.message, variant: "destructive" });
       return;
@@ -298,7 +305,7 @@ function DSPTab() {
   }, [fetchGoogleConnections]);
 
   const handleDisconnectGoogle = useCallback(async () => {
-    const { error } = await supabase.from("platform_connections").delete().eq("platform", "google_ads");
+    const { error } = await (supabase as any).from("platform_connections").delete().eq("platform", "google_ads");
     if (error) {
       toast({ title: "Erro ao desconectar", description: error.message, variant: "destructive" });
       return;
@@ -354,7 +361,7 @@ function DSPTab() {
   }, [fetchDv360Connections]);
 
   const handleDisconnectDV360 = useCallback(async () => {
-    const { error } = await supabase.from("platform_connections").delete().eq("platform", "dv360");
+    const { error } = await (supabase as any).from("platform_connections").delete().eq("platform", "dv360");
     if (error) {
       toast({ title: "Erro ao desconectar", description: error.message, variant: "destructive" });
       return;
@@ -381,6 +388,7 @@ function DSPTab() {
         connecting={metaConnecting}
         onConnect={handleConnectMeta}
         onDisconnect={handleDisconnectMeta}
+        onAccountsUpdated={fetchMetaConnections}
       />
 
       <GoogleAdsCard
@@ -390,6 +398,7 @@ function DSPTab() {
         connecting={googleConnecting}
         onConnect={handleConnectGoogle}
         onDisconnect={handleDisconnectGoogle}
+        onAccountsUpdated={fetchGoogleConnections}
       />
 
       <DV360Card
@@ -399,6 +408,7 @@ function DSPTab() {
         connecting={dv360Connecting}
         onConnect={handleConnectDV360}
         onDisconnect={handleDisconnectDV360}
+        onAccountsUpdated={fetchDv360Connections}
       />
 
       {otherDsps.map(dsp => {
@@ -518,10 +528,100 @@ function SyncResultsList({ results }: { results: SyncResultItem[] }) {
   );
 }
 
+// ── Seleção de contas descobertas (usado nos 3 cards de DSP) ──
+// Contas chegam de uma conexão OAuth com is_selected=false — o usuário escolhe explicitamente
+// quais entram no produto antes de poderem ser sincronizadas.
+
+function AccountSelectionDialog({
+  open, onOpenChange, accounts, platformLabel, onConfirm,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  accounts: PlatformConnectionRow[];
+  platformLabel: string;
+  onConfirm: (ids: string[]) => Promise<void>;
+}) {
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  const toggle = (id: string) => setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+
+  const handleConfirm = async () => {
+    if (!selectedIds.length) return;
+    setSaving(true);
+    try {
+      await onConfirm(selectedIds);
+      setSelectedIds([]);
+      onOpenChange(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) setSelectedIds([]); }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Selecionar contas do {platformLabel}</DialogTitle>
+          <DialogDescription>
+            Escolha quais contas você quer usar no MediaHub. Só as contas selecionadas entram na análise e podem ser sincronizadas.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2 max-h-64 overflow-y-auto py-1">
+          {accounts.map(acc => (
+            <label
+              key={acc.id}
+              className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 cursor-pointer hover:bg-muted/50 transition-colors"
+            >
+              <input
+                type="checkbox"
+                checked={selectedIds.includes(acc.id)}
+                onChange={() => toggle(acc.id)}
+                className="w-4 h-4 accent-primary flex-shrink-0"
+              />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{acc.account_name || acc.account_id}</p>
+                <p className="text-xs text-muted-foreground">{acc.account_id}</p>
+              </div>
+            </label>
+          ))}
+        </div>
+        <DialogFooter className="gap-2">
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)} disabled={saving}>
+            Cancelar
+          </Button>
+          <Button size="sm" onClick={handleConfirm} disabled={!selectedIds.length || saving} className="gap-1.5">
+            {saving
+              ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              : <CheckCircle2 className="w-3.5 h-3.5" />}
+            {saving ? "Salvando..." : `Selecionar${selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function SyncStatusSummary({ accounts }: { accounts: PlatformConnectionRow[] }) {
+  if (accounts.length === 0) return null;
+  const ready = accounts.filter(a => a.sync_status === "ready").length;
+  const syncing = accounts.filter(a => a.sync_status === "syncing").length;
+  const pending = accounts.filter(a => a.sync_status === "pending").length;
+  const errors = accounts.filter(a => a.sync_status === "auth_error" || a.sync_status === "failed").length;
+
+  const parts: string[] = [];
+  if (ready > 0) parts.push(`${ready} pronta${ready > 1 ? "s" : ""}`);
+  if (syncing > 0) parts.push(`${syncing} sincronizando`);
+  if (pending > 0) parts.push(`${pending} pendente${pending > 1 ? "s" : ""}`);
+  if (errors > 0) parts.push(`${errors} com erro`);
+
+  return <p className="text-xs text-muted-foreground">{parts.join(" · ")}</p>;
+}
+
 // ── Meta Ads Card (real connection via Supabase) ──
 
 function MetaAdsCard({
-  meta, connections, loading, connecting, onConnect, onDisconnect,
+  meta, connections, loading, connecting, onConnect, onDisconnect, onAccountsUpdated,
 }: {
   meta: typeof MOCK_DSP_CONNECTIONS[number];
   connections: PlatformConnectionRow[];
@@ -529,14 +629,17 @@ function MetaAdsCard({
   connecting: boolean;
   onConnect: () => void;
   onDisconnect: () => void;
+  onAccountsUpdated: () => void;
 }) {
   const isConnected = connections.length > 0;
-  const realAccounts = connections.filter(c => c.account_id !== "pending");
+  const realAccounts = connections.filter(c => c.account_id !== "pending" && c.is_selected);
+  const discoveredAccounts = connections.filter(c => c.account_id !== "pending" && !c.is_selected);
 
   const [syncOpen, setSyncOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [syncing, setSyncing] = useState(false);
   const [syncResults, setSyncResults] = useState<SyncResultItem[] | null>(null);
+  const [selectOpen, setSelectOpen] = useState(false);
 
   const toggleAccount = (id: string) => {
     setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -562,6 +665,7 @@ function MetaAdsCard({
         message: r.error || (r.days > 0 ? `${r.days} registros importados` : undefined),
       }));
       setSyncResults(results);
+      onAccountsUpdated();
     } catch (e) {
       toast({ title: "Erro na sincronização", description: String(e), variant: "destructive" });
     } finally {
@@ -592,11 +696,23 @@ function MetaAdsCard({
 
         {/* Accounts summary */}
         {isConnected && (
-          <div className="p-2.5 rounded-lg bg-emerald-500/5 border border-emerald-500/20 text-xs text-emerald-400">
-            {realAccounts.length > 0
-              ? `${realAccounts.length} conta${realAccounts.length > 1 ? "s" : ""} de anúncio conectada${realAccounts.length > 1 ? "s" : ""}`
-              : "Autenticado — aguardando contas de anúncio"}
+          <div className="p-2.5 rounded-lg bg-emerald-500/5 border border-emerald-500/20 text-xs text-emerald-400 space-y-1">
+            <p>
+              {realAccounts.length > 0
+                ? `${realAccounts.length} conta${realAccounts.length > 1 ? "s" : ""} de anúncio conectada${realAccounts.length > 1 ? "s" : ""}`
+                : "Autenticado — aguardando seleção de contas"}
+            </p>
+            <SyncStatusSummary accounts={realAccounts} />
           </div>
+        )}
+
+        {isConnected && discoveredAccounts.length > 0 && (
+          <button
+            onClick={() => setSelectOpen(true)}
+            className="w-full text-left p-2.5 rounded-lg bg-amber-500/5 border border-amber-500/20 text-xs text-amber-400 hover:bg-amber-500/10 transition-colors"
+          >
+            {discoveredAccounts.length} conta{discoveredAccounts.length > 1 ? "s" : ""} nova{discoveredAccounts.length > 1 ? "s" : ""} descoberta{discoveredAccounts.length > 1 ? "s" : ""} — selecionar
+          </button>
         )}
 
         {!isConnected && !loading && (
@@ -628,6 +744,28 @@ function MetaAdsCard({
             </Button>
           )}
         </div>
+
+        {/* Account Selection Modal */}
+        <AccountSelectionDialog
+          open={selectOpen}
+          onOpenChange={setSelectOpen}
+          accounts={discoveredAccounts}
+          platformLabel="Meta Ads"
+          onConfirm={async (ids) => {
+            const { error } = await (supabase as any).from("platform_connections").update({ is_selected: true }).in("id", ids);
+            if (error) {
+              toast({ title: "Erro ao selecionar contas", description: error.message, variant: "destructive" });
+              return;
+            }
+            const jobRows = discoveredAccounts.filter(a => ids.includes(a.id)).flatMap(a => ([
+              { platform: "meta_ads", account_id: a.account_id, range_days: 7 },
+              { platform: "meta_ads", account_id: a.account_id, range_days: 90 },
+            ]));
+            if (jobRows.length > 0) await (supabase as any).from("sync_jobs").insert(jobRows);
+            toast({ title: "Contas selecionadas!", description: `${ids.length} conta${ids.length > 1 ? "s" : ""} adicionada${ids.length > 1 ? "s" : ""} ao MediaHub. A sincronização vai começar automaticamente.` });
+            onAccountsUpdated();
+          }}
+        />
 
         {/* Sync Modal */}
         <Dialog open={syncOpen} onOpenChange={(open) => { setSyncOpen(open); if (!open) { setSelectedIds([]); setSyncResults(null); } }}>
@@ -692,7 +830,7 @@ function MetaAdsCard({
 // ── Google Ads Card (real connection via Supabase) ──
 
 function GoogleAdsCard({
-  google, connections, loading, connecting, onConnect, onDisconnect,
+  google, connections, loading, connecting, onConnect, onDisconnect, onAccountsUpdated,
 }: {
   google: typeof MOCK_DSP_CONNECTIONS[number];
   connections: PlatformConnectionRow[];
@@ -700,14 +838,17 @@ function GoogleAdsCard({
   connecting: boolean;
   onConnect: () => void;
   onDisconnect: () => void;
+  onAccountsUpdated: () => void;
 }) {
   const isConnected = connections.length > 0;
-  const realAccounts = connections.filter(c => c.account_id !== "pending");
+  const realAccounts = connections.filter(c => c.account_id !== "pending" && c.is_selected);
+  const discoveredAccounts = connections.filter(c => c.account_id !== "pending" && !c.is_selected);
 
   const [syncOpen, setSyncOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [syncing, setSyncing] = useState(false);
   const [syncResults, setSyncResults] = useState<SyncResultItem[] | null>(null);
+  const [selectOpen, setSelectOpen] = useState(false);
 
   const toggleAccount = (id: string) => {
     setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -733,6 +874,7 @@ function GoogleAdsCard({
         message: r.error || (r.days > 0 ? `${r.days} registros importados` : undefined),
       }));
       setSyncResults(results);
+      onAccountsUpdated();
     } catch (e) {
       toast({ title: "Erro na sincronização", description: String(e), variant: "destructive" });
     } finally {
@@ -763,11 +905,23 @@ function GoogleAdsCard({
 
         {/* Accounts summary */}
         {isConnected && (
-          <div className="p-2.5 rounded-lg bg-emerald-500/5 border border-emerald-500/20 text-xs text-emerald-400">
-            {realAccounts.length > 0
-              ? `${realAccounts.length} conta${realAccounts.length > 1 ? "s" : ""} de anúncio conectada${realAccounts.length > 1 ? "s" : ""}`
-              : "Autenticado — aguardando contas de anúncio"}
+          <div className="p-2.5 rounded-lg bg-emerald-500/5 border border-emerald-500/20 text-xs text-emerald-400 space-y-1">
+            <p>
+              {realAccounts.length > 0
+                ? `${realAccounts.length} conta${realAccounts.length > 1 ? "s" : ""} de anúncio conectada${realAccounts.length > 1 ? "s" : ""}`
+                : "Autenticado — aguardando seleção de contas"}
+            </p>
+            <SyncStatusSummary accounts={realAccounts} />
           </div>
+        )}
+
+        {isConnected && discoveredAccounts.length > 0 && (
+          <button
+            onClick={() => setSelectOpen(true)}
+            className="w-full text-left p-2.5 rounded-lg bg-amber-500/5 border border-amber-500/20 text-xs text-amber-400 hover:bg-amber-500/10 transition-colors"
+          >
+            {discoveredAccounts.length} conta{discoveredAccounts.length > 1 ? "s" : ""} nova{discoveredAccounts.length > 1 ? "s" : ""} descoberta{discoveredAccounts.length > 1 ? "s" : ""} — selecionar
+          </button>
         )}
 
         {!isConnected && !loading && (
@@ -802,6 +956,28 @@ function GoogleAdsCard({
             </Button>
           )}
         </div>
+
+        {/* Account Selection Modal */}
+        <AccountSelectionDialog
+          open={selectOpen}
+          onOpenChange={setSelectOpen}
+          accounts={discoveredAccounts}
+          platformLabel="Google Ads"
+          onConfirm={async (ids) => {
+            const { error } = await (supabase as any).from("platform_connections").update({ is_selected: true }).in("id", ids);
+            if (error) {
+              toast({ title: "Erro ao selecionar contas", description: error.message, variant: "destructive" });
+              return;
+            }
+            const jobRows = discoveredAccounts.filter(a => ids.includes(a.id)).flatMap(a => ([
+              { platform: "google_ads", account_id: a.account_id, range_days: 7 },
+              { platform: "google_ads", account_id: a.account_id, range_days: 90 },
+            ]));
+            if (jobRows.length > 0) await (supabase as any).from("sync_jobs").insert(jobRows);
+            toast({ title: "Contas selecionadas!", description: `${ids.length} conta${ids.length > 1 ? "s" : ""} adicionada${ids.length > 1 ? "s" : ""} ao MediaHub. A sincronização vai começar automaticamente.` });
+            onAccountsUpdated();
+          }}
+        />
 
         {/* Sync Modal */}
         <Dialog open={syncOpen} onOpenChange={(open) => { setSyncOpen(open); if (!open) { setSelectedIds([]); setSyncResults(null); } }}>
@@ -866,7 +1042,7 @@ function GoogleAdsCard({
 // ── DV360 Card (real connection via Supabase) ──
 
 function DV360Card({
-  dv360, connections, loading, connecting, onConnect, onDisconnect,
+  dv360, connections, loading, connecting, onConnect, onDisconnect, onAccountsUpdated,
 }: {
   dv360: typeof MOCK_DSP_CONNECTIONS[number];
   connections: PlatformConnectionRow[];
@@ -874,15 +1050,18 @@ function DV360Card({
   connecting: boolean;
   onConnect: () => void;
   onDisconnect: () => void;
+  onAccountsUpdated: () => void;
 }) {
   const isConnected = connections.length > 0;
-  const realAccounts = connections.filter(c => c.account_id !== "pending");
+  const realAccounts = connections.filter(c => c.account_id !== "pending" && c.is_selected);
+  const discoveredAccounts = connections.filter(c => c.account_id !== "pending" && !c.is_selected);
 
   const [syncOpen, setSyncOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [syncing, setSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState("");
   const [syncResults, setSyncResults] = useState<SyncResultItem[] | null>(null);
+  const [selectOpen, setSelectOpen] = useState(false);
 
   const toggleAccount = (id: string) => {
     setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -946,6 +1125,7 @@ function DV360Card({
         };
       });
       setSyncResults(items);
+      onAccountsUpdated();
     } catch (e) {
       toast({ title: "Erro na sincronização", description: String(e), variant: "destructive" });
     } finally {
@@ -977,11 +1157,23 @@ function DV360Card({
 
         {/* Accounts summary */}
         {isConnected && (
-          <div className="p-2.5 rounded-lg bg-emerald-500/5 border border-emerald-500/20 text-xs text-emerald-400">
-            {realAccounts.length > 0
-              ? `${realAccounts.length} anunciante${realAccounts.length > 1 ? "s" : ""} conectado${realAccounts.length > 1 ? "s" : ""}`
-              : "Autenticado — aguardando anunciantes"}
+          <div className="p-2.5 rounded-lg bg-emerald-500/5 border border-emerald-500/20 text-xs text-emerald-400 space-y-1">
+            <p>
+              {realAccounts.length > 0
+                ? `${realAccounts.length} anunciante${realAccounts.length > 1 ? "s" : ""} conectado${realAccounts.length > 1 ? "s" : ""}`
+                : "Autenticado — aguardando seleção de anunciantes"}
+            </p>
+            <SyncStatusSummary accounts={realAccounts} />
           </div>
+        )}
+
+        {isConnected && discoveredAccounts.length > 0 && (
+          <button
+            onClick={() => setSelectOpen(true)}
+            className="w-full text-left p-2.5 rounded-lg bg-amber-500/5 border border-amber-500/20 text-xs text-amber-400 hover:bg-amber-500/10 transition-colors"
+          >
+            {discoveredAccounts.length} anunciante{discoveredAccounts.length > 1 ? "s" : ""} novo{discoveredAccounts.length > 1 ? "s" : ""} descoberto{discoveredAccounts.length > 1 ? "s" : ""} — selecionar
+          </button>
         )}
 
         {!isConnected && !loading && (
@@ -1016,6 +1208,28 @@ function DV360Card({
             </Button>
           )}
         </div>
+
+        {/* Account Selection Modal */}
+        <AccountSelectionDialog
+          open={selectOpen}
+          onOpenChange={setSelectOpen}
+          accounts={discoveredAccounts}
+          platformLabel="DV360"
+          onConfirm={async (ids) => {
+            const { error } = await (supabase as any).from("platform_connections").update({ is_selected: true }).in("id", ids);
+            if (error) {
+              toast({ title: "Erro ao selecionar contas", description: error.message, variant: "destructive" });
+              return;
+            }
+            const jobRows = discoveredAccounts.filter(a => ids.includes(a.id)).flatMap(a => ([
+              { platform: "dv360", account_id: a.account_id, range_days: 7 },
+              { platform: "dv360", account_id: a.account_id, range_days: 90 },
+            ]));
+            if (jobRows.length > 0) await (supabase as any).from("sync_jobs").insert(jobRows);
+            toast({ title: "Contas selecionadas!", description: `${ids.length} conta${ids.length > 1 ? "s" : ""} adicionada${ids.length > 1 ? "s" : ""} ao MediaHub. A sincronização vai começar automaticamente.` });
+            onAccountsUpdated();
+          }}
+        />
 
         {/* Sync Modal */}
         <Dialog open={syncOpen} onOpenChange={(open) => { setSyncOpen(open); if (!open) { setSelectedIds([]); setSyncResults(null); } }}>

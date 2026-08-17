@@ -1,5 +1,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { createAndRunQuery, refreshAccessToken } from "../_shared/dv360.ts";
+import { classifySyncError, updateSyncStatus } from "../_shared/syncStatus.ts";
+import { resolveUserId } from "../_shared/internalAuth.ts";
 
 // Só cria e dispara os relatórios (rápido) — o resultado é buscado depois via dv360-sync-poll,
 // porque a geração do relatório no DV360 é assíncrona e pode levar bem mais que o limite de
@@ -12,20 +14,22 @@ Deno.serve(async (req) => {
   try {
     const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) return Response.json({ error: "Não autorizado" }, { status: 401 });
+    const body = await req.json() as { account_ids: string[]; range_days?: number; _internal_user_id?: string };
+    const auth = await resolveUserId(req, supabase, body);
+    if ("errorResponse" in auth) return auth.errorResponse;
+    const { userId } = auth;
 
-    const { data: { user }, error: authErr } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
-    if (authErr || !user) return Response.json({ error: "Token inválido" }, { status: 401 });
-
-    const { account_ids } = await req.json() as { account_ids: string[] };
+    const { account_ids } = body;
     if (!account_ids?.length) return Response.json({ error: "Nenhuma conta selecionada" }, { status: 400 });
+
+    const rangeDays = body.range_days ?? 90;
 
     const { data: connections } = await supabase
       .from("platform_connections")
       .select("account_id, access_token, refresh_token, token_expires_at")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .eq("platform", "dv360")
+      .eq("is_selected", true)
       .in("account_id", account_ids);
 
     if (!connections?.length) return Response.json({ error: "Conexões não encontradas" }, { status: 404 });
@@ -38,7 +42,9 @@ Deno.serve(async (req) => {
     for (const conn of connections) {
       try {
         if (!conn.refresh_token) {
-          jobs.push({ account_id: conn.account_id, error: "Sem refresh token — reconecte a conta." });
+          const msg = "Sem refresh token — reconecte a conta.";
+          jobs.push({ account_id: conn.account_id, error: msg });
+          await updateSyncStatus(supabase, userId, "dv360", conn.account_id, "auth_error", msg);
           continue;
         }
 
@@ -50,13 +56,20 @@ Deno.serve(async (req) => {
           await supabase
             .from("platform_connections")
             .update({ access_token: refreshed.accessToken, token_expires_at: refreshed.expiresAt })
-            .eq("user_id", user.id).eq("platform", "dv360").eq("account_id", conn.account_id);
+            .eq("user_id", userId).eq("platform", "dv360").eq("account_id", conn.account_id);
         }
 
-        const { queryId, reportId } = await createAndRunQuery(conn.account_id, accessToken!);
+        const { queryId, reportId } = await createAndRunQuery(conn.account_id, accessToken!, rangeDays);
         jobs.push({ account_id: conn.account_id, query_id: queryId, report_id: reportId });
+        // Relatório iniciado — dv360-sync-poll é quem grava o resultado final (ready/failed)
+        // quando o polling do frontend resolver.
+        await supabase.from("platform_connections")
+          .update({ sync_status: "syncing", sync_error: null })
+          .eq("user_id", userId).eq("platform", "dv360").eq("account_id", conn.account_id);
       } catch (e) {
-        jobs.push({ account_id: conn.account_id, error: String(e) });
+        const msg = String(e);
+        jobs.push({ account_id: conn.account_id, error: msg });
+        await updateSyncStatus(supabase, userId, "dv360", conn.account_id, classifySyncError(msg), msg);
       }
     }
 

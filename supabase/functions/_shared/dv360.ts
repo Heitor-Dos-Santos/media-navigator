@@ -49,14 +49,22 @@ export async function refreshAccessToken(refreshToken: string, clientId: string,
   return { accessToken: data.access_token, expiresAt: new Date(Date.now() + (data.expires_in ?? 3600) * 1000).toISOString() };
 }
 
-export async function createAndRunQuery(advertiserId: string, accessToken: string): Promise<{ queryId: string; reportId: string }> {
+// DV360 Bid Manager aceita esses literais fixos de intervalo (não um N arbitrário de dias).
+function daysToDataRange(days: number): string {
+  if (days <= 7) return "LAST_7_DAYS";
+  if (days <= 30) return "LAST_30_DAYS";
+  return "LAST_90_DAYS";
+}
+
+export async function createAndRunQuery(advertiserId: string, accessToken: string, rangeDays = 90): Promise<{ queryId: string; reportId: string }> {
+  const dataRange = daysToDataRange(rangeDays);
   const createRes = await fetch(`${BID_MANAGER_API}/queries`, {
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       metadata: {
         title: `MediaHub sync ${advertiserId} ${Date.now()}`,
-        dataRange: { range: "LAST_90_DAYS" },
+        dataRange: { range: dataRange },
         format: "CSV",
       },
       params: {
@@ -79,7 +87,7 @@ export async function createAndRunQuery(advertiserId: string, accessToken: strin
   const runRes = await fetch(`${BID_MANAGER_API}/queries/${queryId}:run`, {
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ dataRange: { range: "LAST_90_DAYS" } }),
+    body: JSON.stringify({ dataRange: { range: dataRange } }),
   });
   const runData = await runRes.json().catch(() => ({})) as { key?: { reportId?: string } };
   if (!runRes.ok || !runData.key?.reportId) {

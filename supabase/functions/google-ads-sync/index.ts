@@ -1,4 +1,6 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { classifySyncError, updateSyncStatus } from "../_shared/syncStatus.ts";
+import { resolveUserId } from "../_shared/internalAuth.ts";
 
 const GOOGLE_ADS_API_VERSION = "v22";
 const MICROS = 1_000_000;
@@ -43,10 +45,10 @@ async function refreshAccessToken(refreshToken: string, clientId: string, client
   return { accessToken: data.access_token, expiresAt: new Date(Date.now() + (data.expires_in ?? 3600) * 1000).toISOString() };
 }
 
-async function fetchCampaignMetrics(targetCustomerId: string, loginCustomerId: string, accessToken: string, developerToken: string): Promise<GaqlRow[]> {
+async function fetchCampaignMetrics(targetCustomerId: string, loginCustomerId: string, accessToken: string, developerToken: string, daysBack: number): Promise<GaqlRow[]> {
   // GAQL "DURING" só aceita literais fixas (LAST_30_DAYS etc.) — não existe LAST_90_DAYS, por isso usamos BETWEEN com datas explícitas.
   const end = new Date();
-  const start = new Date(end.getTime() - 90 * 24 * 60 * 60 * 1000);
+  const start = new Date(end.getTime() - daysBack * 24 * 60 * 60 * 1000);
   const fmt = (d: Date) => d.toISOString().slice(0, 10);
 
   const query = `
@@ -95,20 +97,22 @@ Deno.serve(async (req) => {
   try {
     const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) return Response.json({ error: "Não autorizado" }, { status: 401 });
+    const body = await req.json() as { account_ids: string[]; range_days?: number; _internal_user_id?: string };
+    const auth = await resolveUserId(req, supabase, body);
+    if ("errorResponse" in auth) return auth.errorResponse;
+    const { userId } = auth;
 
-    const { data: { user }, error: authErr } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
-    if (authErr || !user) return Response.json({ error: "Token inválido" }, { status: 401 });
-
-    const { account_ids } = await req.json() as { account_ids: string[] };
+    const { account_ids } = body;
     if (!account_ids?.length) return Response.json({ error: "Nenhuma conta selecionada" }, { status: 400 });
+
+    const rangeDays = body.range_days ?? 90;
 
     const { data: connections } = await supabase
       .from("platform_connections")
       .select("account_id, account_name, manager_customer_id, access_token, refresh_token, token_expires_at")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .eq("platform", "google_ads")
+      .eq("is_selected", true)
       .in("account_id", account_ids);
 
     if (!connections?.length) return Response.json({ error: "Conexões não encontradas" }, { status: 404 });
@@ -123,7 +127,9 @@ Deno.serve(async (req) => {
     for (const conn of connections) {
       try {
         if (!conn.refresh_token) {
-          results.push({ account_id: conn.account_id, days: 0, campaigns: 0, error: "Sem refresh token — reconecte a conta." });
+          const msg = "Sem refresh token — reconecte a conta.";
+          results.push({ account_id: conn.account_id, days: 0, campaigns: 0, error: msg });
+          await updateSyncStatus(supabase, userId, "google_ads", conn.account_id, "auth_error", msg);
           continue;
         }
 
@@ -136,16 +142,17 @@ Deno.serve(async (req) => {
           await supabase
             .from("platform_connections")
             .update({ access_token: refreshed.accessToken, token_expires_at: refreshed.expiresAt })
-            .eq("user_id", user.id).eq("platform", "google_ads").eq("account_id", conn.account_id);
+            .eq("user_id", userId).eq("platform", "google_ads").eq("account_id", conn.account_id);
         }
 
         // Contas descobertas via MCC guardam por qual gerenciadora foram acessadas — o Google exige
         // esse id no header "login-customer-id" pra autorizar o acesso via hierarquia.
         const loginId = conn.manager_customer_id ?? conn.account_id;
-        const rows = await fetchCampaignMetrics(conn.account_id, loginId, accessToken!, developerToken);
+        const rows = await fetchCampaignMetrics(conn.account_id, loginId, accessToken!, developerToken, rangeDays);
 
         if (rows.length === 0) {
           results.push({ account_id: conn.account_id, days: 0, campaigns: 0, error: "Sem dados nos últimos 90 dias." });
+          await updateSyncStatus(supabase, userId, "google_ads", conn.account_id, "ready", null);
           await sleep(400);
           continue;
         }
@@ -204,7 +211,7 @@ Deno.serve(async (req) => {
         const accountRows = Object.entries(byDateStage).map(([key, g]) => {
           const [date, stage] = key.split("__");
           return {
-            user_id: user.id, platform: "google_ads", account_id: conn.account_id, account_name: conn.account_name,
+            user_id: userId, platform: "google_ads", account_id: conn.account_id, account_name: conn.account_name,
             campaign_id: "", campaign_name: null, objective: null,
             date, funnel_stage: stage,
             investimento: g.investimento,
@@ -223,7 +230,7 @@ Deno.serve(async (req) => {
         const campUpsertRows = Object.entries(byCampDateStage).map(([key, g]) => {
           const [campId, date, stage] = key.split("__");
           return {
-            user_id: user.id, platform: "google_ads", account_id: conn.account_id, account_name: conn.account_name,
+            user_id: userId, platform: "google_ads", account_id: conn.account_id, account_name: conn.account_name,
             campaign_id: campId, campaign_name: g.campaign_name, objective: g.channelType,
             date, funnel_stage: stage,
             investimento: g.investimento,
@@ -246,8 +253,11 @@ Deno.serve(async (req) => {
         }
 
         results.push({ account_id: conn.account_id, days: accountRows.length, campaigns: campUpsertRows.length });
+        await updateSyncStatus(supabase, userId, "google_ads", conn.account_id, "ready", null);
       } catch (e) {
-        results.push({ account_id: conn.account_id, days: 0, campaigns: 0, error: String(e) });
+        const msg = String(e);
+        results.push({ account_id: conn.account_id, days: 0, campaigns: 0, error: msg });
+        await updateSyncStatus(supabase, userId, "google_ads", conn.account_id, classifySyncError(msg), msg);
       }
       await sleep(400);
     }
