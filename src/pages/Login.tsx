@@ -7,7 +7,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 
 export default function Login() {
-  const { signIn, signUp } = useAuth();
+  const { signIn, signUp, resetPasswordForEmail } = useAuth();
   const navigate = useNavigate();
   const [mode, setMode] = useState<"login" | "signup" | "forgot">("login");
   const [name, setName] = useState("");
@@ -17,6 +17,20 @@ export default function Login() {
   const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
+  const [resetEmailSent, setResetEmailSent] = useState(false);
+
+  async function handleForgotPassword(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      const { error } = await resetPasswordForEmail(email);
+      if (error) setError(error.message);
+      else setResetEmailSent(true);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -91,7 +105,24 @@ export default function Login() {
               </button>
             </div>
           )}
-          {!emailSent && (
+          {!emailSent && resetEmailSent && (
+            <div className="text-center space-y-3 py-4">
+              <div className="text-4xl">📧</div>
+              <h2 className="text-lg font-semibold text-foreground">Verifique seu email</h2>
+              <p className="text-sm text-muted-foreground">
+                Se houver uma conta com o email <span className="text-foreground font-medium">{email}</span>,
+                enviamos um link para redefinir sua senha.
+                <br />Clique no link recebido para escolher uma nova senha.
+              </p>
+              <button
+                onClick={() => { setResetEmailSent(false); setMode("login"); setError(""); }}
+                className="text-sm text-primary hover:underline mt-2"
+              >
+                Voltar para o login
+              </button>
+            </div>
+          )}
+          {!emailSent && !resetEmailSent && (
             <>
               <div>
                 <h1 className="text-xl font-semibold text-foreground">
@@ -110,14 +141,15 @@ export default function Login() {
                 </p>
               </div>
 
-              <form onSubmit={handleSubmit} className="space-y-4">
-                {mode === "signup" && (
+              {mode === "forgot" ? (
+                <form onSubmit={handleForgotPassword} className="space-y-4">
                   <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-foreground">Nome</label>
+                    <label className="text-sm font-medium text-foreground">Email</label>
                     <Input
-                      placeholder="Seu nome"
-                      value={name}
-                      onChange={e => setName(e.target.value)}
+                      type="email"
+                      placeholder="seu@email.com"
+                      value={email}
+                      onChange={e => setEmail(e.target.value)}
                       required
                     />
                   </div>
